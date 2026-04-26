@@ -27,9 +27,10 @@ const Icon = ({ name, size = 16 }) => {
 const USD_RATE = 25400; // tỷ giá mặc định VND/USD
 const fmtVND = (n) => new Intl.NumberFormat("vi-VN").format(Math.round(n || 0)) + " đ";
 const fmtUSD = (n) => "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n || 0);
-const fmtDate = (ts) => {
-  if (!ts) return "";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
+const fmtDate = (row) => {
+  if (row?.ngay) return new Date(row.ngay + "T00:00:00").toLocaleDateString("vi-VN");
+  if (!row?.createdAt) return "";
+  const d = row.createdAt.toDate ? row.createdAt.toDate() : new Date(row.createdAt);
   return d.toLocaleDateString("vi-VN");
 };
 
@@ -69,7 +70,7 @@ export default function App() {
   // Staff stats
   const staffStats = {};
   chiRows.forEach(r => {
-    const name = r.nguoiMua || "Không rõ";
+    const name = (r.nguoiMua || "Không rõ").trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
     if (!staffStats[name]) staffStats[name] = { vnd: 0, usd: 0, accCount: 0 };
     if (r.currency === "VND") staffStats[name].vnd += r.soTien || 0;
     else staffStats[name].usd += r.soTien || 0;
@@ -78,7 +79,7 @@ export default function App() {
 
   const nhanStats = {};
   nhanRows.forEach(r => {
-    const name = r.nguoiChuyen || "Không rõ";
+    const name = (r.nguoiChuyen || "Không rõ").trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
     if (!nhanStats[name]) nhanStats[name] = { vnd: 0, usd: 0 };
     if (r.currency === "VND") nhanStats[name].vnd += r.soTien || 0;
     else nhanStats[name].usd += r.soTien || 0;
@@ -212,7 +213,7 @@ export default function App() {
               <tbody>
                 {chiRows.map(r => (
                   <tr key={r.id} className={r.cancelled ? "cancelled" : ""}>
-                    <td>{fmtDate(r.createdAt)}</td>
+                    <td>{fmtDate(r)}</td>
                     <td><span className="acc-name">{r.account}</span></td>
                     <td className="num red-text">{r.currency === "USD" ? fmtUSD(r.soTien) : fmtVND(r.soTien)}</td>
                     <td><span className={`badge ${r.currency === "USD" ? "yellow" : "blue"}`}>{r.currency}</span></td>
@@ -245,7 +246,7 @@ export default function App() {
               <tbody>
                 {nhanRows.map(r => (
                   <tr key={r.id}>
-                    <td>{fmtDate(r.createdAt)}</td>
+                    <td>{fmtDate(r)}</td>
                     <td className="num green-text">{r.currency === "USD" ? fmtUSD(r.soTien) : fmtVND(r.soTien)}</td>
                     <td><span className={`badge ${r.currency === "USD" ? "yellow" : "green"}`}>{r.currency}</span></td>
                     <td><span className="badge green">{r.nguoiChuyen}</span></td>
@@ -310,6 +311,8 @@ function StatBox({ label, value, unit, color }) {
 // ─── MODAL ───────────────────────────────────────────────────────────────────
 function Modal({ type, data, onClose, onSave }) {
   const isChi = type === "chi";
+  const todayStr = new Date().toISOString().split("T")[0];
+  const existingDate = data?.ngay || (data?.createdAt?.toDate ? data.createdAt.toDate().toISOString().split("T")[0] : todayStr);
   const [form, setForm] = useState({
     account: data?.account || "",
     soTien: data?.soTien || "",
@@ -318,6 +321,7 @@ function Modal({ type, data, onClose, onSave }) {
     nguoiChuyen: data?.nguoiChuyen || "",
     ghiChu: data?.ghiChu || "",
     cancelled: data?.cancelled || false,
+    ngay: existingDate,
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -341,6 +345,9 @@ function Modal({ type, data, onClose, onSave }) {
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={16}/></button>
         </div>
         <div className="modal-body">
+          <Field label="Ngày">
+            <input type="date" value={form.ngay} onChange={e => set("ngay", e.target.value)} />
+          </Field>
           {isChi && (
             <Field label="Tên Account">
               <input value={form.account} onChange={e => set("account", e.target.value)} placeholder="lord 35, nikke 14..." />
