@@ -41,6 +41,8 @@ export default function App() {
   const [nhanRows, setNhanRows] = useState([]);
   const [modal, setModal] = useState(null); // { type: 'chi'|'nhan', data: null|{...} }
   const [loading, setLoading] = useState(true);
+  const now = new Date();
+  const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
 
   // ── Realtime listeners ──
   useEffect(() => {
@@ -56,20 +58,35 @@ export default function App() {
     return () => { unsubChi(); unsubNhan(); };
   }, []);
 
+  // ── Filter by month ──
+  const getRowDate = (r) => {
+    if (r.ngay) return new Date(r.ngay + "T00:00:00");
+    if (r.createdAt?.toDate) return r.createdAt.toDate();
+    return new Date();
+  };
+  const inMonth = (r) => {
+    if (!filterMonth) return true;
+    const d = getRowDate(r);
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    return ym === filterMonth;
+  };
+  const filteredChi = chiRows.filter(inMonth);
+  const filteredNhan = nhanRows.filter(inMonth);
+
   // ── Aggregates ──
-  const totalChiVND = chiRows.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
-  const totalChiUSD = chiRows.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
+  const totalChiVND = filteredChi.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
+  const totalChiUSD = filteredChi.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
   const totalChiAll = totalChiVND + totalChiUSD * USD_RATE;
 
-  const totalNhanVND = nhanRows.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
-  const totalNhanUSD = nhanRows.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
+  const totalNhanVND = filteredNhan.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
+  const totalNhanUSD = filteredNhan.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
   const totalNhanAll = totalNhanVND + totalNhanUSD * USD_RATE;
 
   const con = totalNhanAll - totalChiAll;
 
   // Staff stats
   const staffStats = {};
-  chiRows.forEach(r => {
+  filteredChi.forEach(r => {
     const name = (r.nguoiMua || "Không rõ").trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
     if (!staffStats[name]) staffStats[name] = { vnd: 0, usd: 0, accCount: 0 };
     if (r.currency === "VND") staffStats[name].vnd += r.soTien || 0;
@@ -78,7 +95,7 @@ export default function App() {
   });
 
   const nhanStats = {};
-  nhanRows.forEach(r => {
+  filteredNhan.forEach(r => {
     const name = (r.nguoiChuyen || "Không rõ").trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
     if (!nhanStats[name]) nhanStats[name] = { vnd: 0, usd: 0 };
     if (r.currency === "VND") nhanStats[name].vnd += r.soTien || 0;
@@ -124,6 +141,16 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="month-filter">
+          <span className="month-label">Tháng</span>
+          <input
+            type="month"
+            value={filterMonth}
+            onChange={e => setFilterMonth(e.target.value)}
+            className="month-input"
+          />
+          <button className="month-all-btn" onClick={() => setFilterMonth("")}>Tất cả</button>
+        </div>
       </header>
 
       {/* SUMMARY BAR */}
@@ -211,7 +238,7 @@ export default function App() {
                 <tr><th>Ngày</th><th>Account</th><th>Số Tiền VND</th><th>Số Tiền USD</th><th>Người Mua</th><th>Ghi Chú</th><th></th></tr>
               </thead>
               <tbody>
-                {chiRows.map(r => (
+                {filteredChi.map(r => (
                   <tr key={r.id} className={r.cancelled ? "cancelled" : ""}>
                     <td>{fmtDate(r)}</td>
                     <td><span className="acc-name">{r.account}</span></td>
@@ -244,7 +271,7 @@ export default function App() {
                 <tr><th>Ngày</th><th>Số Tiền</th><th>Tiền Tệ</th><th>Người Chuyển</th><th>Ghi Chú</th><th></th></tr>
               </thead>
               <tbody>
-                {nhanRows.map(r => (
+                {filteredNhan.map(r => (
                   <tr key={r.id}>
                     <td>{fmtDate(r)}</td>
                     <td className="num green-text">{r.currency === "USD" ? fmtUSD(r.soTien) : fmtVND(r.soTien)}</td>
