@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "chi",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "nguoiMua", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "nhan",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "nguoiChuyen", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

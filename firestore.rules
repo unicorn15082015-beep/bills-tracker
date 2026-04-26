@@ -1,0 +1,20 @@
+// firestore.rules
+// Deploy: firebase deploy --only firestore:rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Collection "chi" - giao dịch chi
+    match /chi/{docId} {
+      allow read, write: if true; // Tạm thời mở, sau đổi sang auth
+      // Khi có auth: allow read, write: if request.auth != null;
+    }
+
+    // Collection "nhan" - nhập quỹ
+    match /nhan/{docId} {
+      allow read, write: if true;
+    }
+
+  }
+}
