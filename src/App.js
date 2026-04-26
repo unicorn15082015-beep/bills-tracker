@@ -24,7 +24,7 @@ const Icon = ({ name, size = 16 }) => {
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-const USD_RATE = 25400; // tỷ giá mặc định VND/USD
+const USD_RATE = 26000; // tỷ giá mặc định VND/USD
 const fmtVND = (n) => new Intl.NumberFormat("vi-VN").format(Math.round(n || 0)) + " đ";
 const fmtUSD = (n) => "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n || 0);
 const fmtDate = (row) => {
