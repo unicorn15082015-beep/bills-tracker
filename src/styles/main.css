@@ -147,6 +147,7 @@ body {
 .num { font-family: var(--mono); font-size: 12px; text-align: right; }
 .red-text   { color: var(--red); }
 .green-text { color: var(--green); }
+.yellow-text { color: var(--yellow); }
 .note-cell { color: var(--text-dim); font-size: 12px; }
 
 /* ── BADGE ───────────────────────────────────────────────────── */

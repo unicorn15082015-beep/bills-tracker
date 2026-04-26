@@ -24,7 +24,7 @@ const Icon = ({ name, size = 16 }) => {
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-const USD_RATE = 26000; // tỷ giá mặc định VND/USD
+const USD_RATE = 25400; // tỷ giá mặc định VND/USD
 const fmtVND = (n) => new Intl.NumberFormat("vi-VN").format(Math.round(n || 0)) + " đ";
 const fmtUSD = (n) => "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n || 0);
 const fmtDate = (row) => {
@@ -208,15 +208,15 @@ export default function App() {
             </div>
             <table className="data-table">
               <thead>
-                <tr><th>Ngày</th><th>Account</th><th>Số Tiền</th><th>Tiền Tệ</th><th>Người Mua</th><th>Ghi Chú</th><th></th></tr>
+                <tr><th>Ngày</th><th>Account</th><th>Số Tiền VND</th><th>Số Tiền USD</th><th>Người Mua</th><th>Ghi Chú</th><th></th></tr>
               </thead>
               <tbody>
                 {chiRows.map(r => (
                   <tr key={r.id} className={r.cancelled ? "cancelled" : ""}>
                     <td>{fmtDate(r)}</td>
                     <td><span className="acc-name">{r.account}</span></td>
-                    <td className="num red-text">{r.currency === "USD" ? fmtUSD(r.soTien) : fmtVND(r.soTien)}</td>
-                    <td><span className={`badge ${r.currency === "USD" ? "yellow" : "blue"}`}>{r.currency}</span></td>
+                    <td className="num red-text">{r.currency === "VND" ? fmtVND(r.soTien) : ""}</td>
+                    <td className="num yellow-text">{r.currency === "USD" ? fmtUSD(r.soTien) : ""}</td>
                     <td><span className="badge blue">{r.nguoiMua}</span></td>
                     <td className="note-cell">{r.ghiChu}</td>
                     <td className="actions">
