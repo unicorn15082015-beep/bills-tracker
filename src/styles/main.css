@@ -120,6 +120,7 @@ body {
 .sum-card.green .sum-value { color: var(--green); }
 .sum-card.blue  .sum-value { color: var(--blue); }
 .sum-sub { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+.sum-sub2 { font-size: 12px; color: var(--text-dim); font-family: var(--mono); margin-top: 2px; }
 
 /* ── MAIN ─────────────────────────────────────────────────────── */
 .main { flex: 1; padding: 24px 20px; }

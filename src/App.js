@@ -73,16 +73,13 @@ export default function App() {
   const filteredChi = chiRows.filter(inMonth);
   const filteredNhan = nhanRows.filter(inMonth);
 
-  // ── Aggregates ──
+  // ── Aggregates (VND và USD tách biệt hoàn toàn) ──
   const totalChiVND = filteredChi.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
   const totalChiUSD = filteredChi.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
-  const totalChiAll = totalChiVND + totalChiUSD * USD_RATE;
-
   const totalNhanVND = filteredNhan.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
   const totalNhanUSD = filteredNhan.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
-  const totalNhanAll = totalNhanVND + totalNhanUSD * USD_RATE;
-
-  const con = totalNhanAll - totalChiAll;
+  const conVND = totalNhanVND - totalChiVND;
+  const conUSD = totalNhanUSD - totalChiUSD;
 
   // Staff stats
   const staffStats = {};
@@ -156,19 +153,19 @@ export default function App() {
       {/* SUMMARY BAR */}
       <div className="summary-bar">
         <div className="sum-card red">
-          <div className="sum-label">Tổng Chi</div>
-          <div className="sum-value">{fmtVND(totalChiAll)}</div>
-          <div className="sum-sub">VND: {fmtVND(totalChiVND)} · USD: {fmtUSD(totalChiUSD)}</div>
+          <div className="sum-label">Tổng Chi VND</div>
+          <div className="sum-value">{fmtVND(totalChiVND)}</div>
+          <div className="sum-sub2">Chi USD: {fmtUSD(totalChiUSD)}</div>
         </div>
         <div className="sum-card green">
-          <div className="sum-label">Tổng Nhập</div>
-          <div className="sum-value">{fmtVND(totalNhanAll)}</div>
-          <div className="sum-sub">VND: {fmtVND(totalNhanVND)} · USD: {fmtUSD(totalNhanUSD)}</div>
+          <div className="sum-label">Tổng Nhập VND</div>
+          <div className="sum-value">{fmtVND(totalNhanVND)}</div>
+          <div className="sum-sub2">Nhập USD: {fmtUSD(totalNhanUSD)}</div>
         </div>
-        <div className={`sum-card ${con >= 0 ? "blue" : "red"}`}>
-          <div className="sum-label">Còn Lại</div>
-          <div className="sum-value">{fmtVND(con)}</div>
-          <div className="sum-sub">Tỷ giá: {fmtVND(USD_RATE)}/USD</div>
+        <div className={`sum-card ${conVND >= 0 ? "blue" : "red"}`}>
+          <div className="sum-label">Còn VND</div>
+          <div className="sum-value">{fmtVND(conVND)}</div>
+          <div className={`sum-sub2 ${conUSD >= 0 ? "green-text" : "red-text"}`}>Còn USD: {fmtUSD(conUSD)}</div>
         </div>
       </div>
 
