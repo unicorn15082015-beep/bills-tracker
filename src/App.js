@@ -3,7 +3,8 @@ import {
   collection, addDoc, onSnapshot, query, orderBy,
   deleteDoc, doc, updateDoc, serverTimestamp
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import "./styles/main.css";
 
 // ─── ICONS (inline SVG để không cần thư viện) ────────────────────────────────
@@ -37,6 +38,16 @@ const fmtDate = (row) => {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("dashboard");
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+    return () => unsub();
+  }, []);
   const [chiRows, setChiRows] = useState([]);
   const [nhanRows, setNhanRows] = useState([]);
   const [modal, setModal] = useState(null); // { type: 'chi'|'nhan', data: null|{...} }
@@ -122,6 +133,9 @@ export default function App() {
     { id: "staff", label: "Nhân Viên", icon: "user" },
   ];
 
+  if (authLoading) return <div className="auth-loading">Đang tải...</div>;
+  if (!user) return <LoginScreen />;
+
   return (
     <div className="app">
       {/* HEADER */}
@@ -129,6 +143,10 @@ export default function App() {
         <div className="header-brand">
           <Icon name="wallet" size={22} />
           <span>BILLS TRACKER</span>
+        </div>
+        <div className="header-user">
+          <span className="user-email">{user.email}</span>
+          <button className="btn-logout" onClick={() => signOut(auth)}>Đăng xuất</button>
         </div>
         <nav className="tab-nav">
           {tabs.map(t => (
@@ -421,6 +439,63 @@ function Field({ label, children }) {
     <div className="field">
       {label && <label>{label}</label>}
       {children}
+    </div>
+  );
+}
+
+// ─── LOGIN SCREEN ─────────────────────────────────────────────
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) { setError("Vui lòng nhập đầy đủ thông tin"); return; }
+    setLoading(true); setError("");
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      setError("Email hoặc mật khẩu không đúng");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-overlay">
+      <div className="login-box">
+        <div className="login-logo">
+          <span style={{fontSize:28}}>💰</span>
+          <div className="login-title">BILLS TRACKER</div>
+          <div className="login-sub">Đăng nhập để tiếp tục</div>
+        </div>
+        <div className="login-fields">
+          <div className="field">
+            <label>Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="your@email.com"
+              onKeyDown={e => e.key === "Enter" && handleLogin()}
+            />
+          </div>
+          <div className="field">
+            <label>Mật khẩu</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              onKeyDown={e => e.key === "Enter" && handleLogin()}
+            />
+          </div>
+          {error && <div className="login-error">{error}</div>}
+          <button className="btn-login" onClick={handleLogin} disabled={loading}>
+            {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
