@@ -57,17 +57,19 @@ export default function App() {
 
   // ── Realtime listeners ──
   useEffect(() => {
-    const qChi = query(collection(db, "chi"), orderBy("createdAt", "desc"));
+    if (!user) return;
+    const uid = user.uid;
+    const qChi = query(collection(db, `users/${uid}/chi`), orderBy("createdAt", "desc"));
     const unsubChi = onSnapshot(qChi, (snap) => {
       setChiRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
     });
-    const qNhan = query(collection(db, "nhan"), orderBy("createdAt", "desc"));
+    const qNhan = query(collection(db, `users/${uid}/nhan`), orderBy("createdAt", "desc"));
     const unsubNhan = onSnapshot(qNhan, (snap) => {
       setNhanRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return () => { unsubChi(); unsubNhan(); };
-  }, []);
+  }, [user]);
 
   // ── Filter by month ──
   const getRowDate = (r) => {
@@ -112,17 +114,20 @@ export default function App() {
 
   // ── CRUD ──
   const saveRecord = async (collName, data, id) => {
+    const uid = user.uid;
+    const path = `users/${uid}/${collName}`;
     if (id) {
-      await updateDoc(doc(db, collName, id), { ...data, updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, path, id), { ...data, updatedAt: serverTimestamp() });
     } else {
-      await addDoc(collection(db, collName), { ...data, createdAt: serverTimestamp() });
+      await addDoc(collection(db, path), { ...data, createdAt: serverTimestamp() });
     }
     setModal(null);
   };
 
   const deleteRecord = async (collName, id) => {
     if (window.confirm("Xác nhận xóa?")) {
-      await deleteDoc(doc(db, collName, id));
+      const uid = user.uid;
+      await deleteDoc(doc(db, `users/${uid}/${collName}`, id));
     }
   };
 
