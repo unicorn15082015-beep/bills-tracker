@@ -3,7 +3,8 @@ import {
   collection, addDoc, onSnapshot, query, orderBy,
   deleteDoc, doc, updateDoc, serverTimestamp
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "./firebase";
 import "./styles/main.css";
 
 // ─── ICONS (inline SVG để không cần thư viện) ────────────────────────────────
@@ -41,11 +42,25 @@ export default function App() {
   const [nhanRows, setNhanRows] = useState([]);
   const [modal, setModal] = useState(null); // { type: 'chi'|'nhan', data: null|{...} }
   const [loading, setLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
   const now = new Date();
   const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
 
-  // ── Realtime listeners ──
+  // ── Anonymous Auth ──
   useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setAuthReady(true);
+      } else {
+        signInAnonymously(auth).catch(console.error);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // ── Realtime listeners (chỉ chạy sau khi đã auth) ──
+  useEffect(() => {
+    if (!authReady) return;
     const qChi = query(collection(db, "chi"), orderBy("createdAt", "desc"));
     const unsubChi = onSnapshot(qChi, (snap) => {
       setChiRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -56,7 +71,7 @@ export default function App() {
       setNhanRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return () => { unsubChi(); unsubNhan(); };
-  }, []);
+  }, [authReady]);
 
   // ── Filter by month ──
   const getRowDate = (r) => {
