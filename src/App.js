@@ -3,11 +3,11 @@ import {
   collection, addDoc, onSnapshot, query, orderBy,
   deleteDoc, doc, updateDoc, serverTimestamp
 } from "firebase/firestore";
-import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "./firebase";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import "./styles/main.css";
 
-// ─── ICONS (inline SVG để không cần thư viện) ────────────────────────────────
+// ─── ICONS ────────────────────────────────────────────────────────────────────
 const Icon = ({ name, size = 16 }) => {
   const icons = {
     plus: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
@@ -25,7 +25,7 @@ const Icon = ({ name, size = 16 }) => {
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-const USD_RATE = 25400; // tỷ giá mặc định VND/USD
+const USD_RATE = 25400;
 const fmtVND = (n) => new Intl.NumberFormat("vi-VN").format(Math.round(n || 0)) + " đ";
 const fmtUSD = (n) => "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n || 0);
 const fmtDate = (row) => {
@@ -38,40 +38,39 @@ const fmtDate = (row) => {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("dashboard");
-  const [chiRows, setChiRows] = useState([]);
-  const [nhanRows, setNhanRows] = useState([]);
-  const [modal, setModal] = useState(null); // { type: 'chi'|'nhan', data: null|{...} }
-  const [loading, setLoading] = useState(true);
-  const [authReady, setAuthReady] = useState(false);
-  const now = new Date();
-  const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  // ── Anonymous Auth ──
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setAuthReady(true);
-      } else {
-        signInAnonymously(auth).catch(console.error);
-      }
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
     });
     return () => unsub();
   }, []);
 
-  // ── Realtime listeners (chỉ chạy sau khi đã auth) ──
+  const [chiRows, setChiRows] = useState([]);
+  const [nhanRows, setNhanRows] = useState([]);
+  const [modal, setModal] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const now = new Date();
+  const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+
+  // ── Realtime listeners ──
   useEffect(() => {
-    if (!authReady) return;
-    const qChi = query(collection(db, "chi"), orderBy("createdAt", "desc"));
+    if (!user) return;
+    const uid = user.uid;
+    const qChi = query(collection(db, `users/${uid}/chi`), orderBy("createdAt", "desc"));
     const unsubChi = onSnapshot(qChi, (snap) => {
       setChiRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
     });
-    const qNhan = query(collection(db, "nhan"), orderBy("createdAt", "desc"));
+    const qNhan = query(collection(db, `users/${uid}/nhan`), orderBy("createdAt", "desc"));
     const unsubNhan = onSnapshot(qNhan, (snap) => {
       setNhanRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return () => { unsubChi(); unsubNhan(); };
-  }, [authReady]);
+  }, [user]);
 
   // ── Filter by month ──
   const getRowDate = (r) => {
@@ -88,7 +87,7 @@ export default function App() {
   const filteredChi = chiRows.filter(inMonth);
   const filteredNhan = nhanRows.filter(inMonth);
 
-  // ── Aggregates (VND và USD tách biệt hoàn toàn) ──
+  // ── Aggregates ──
   const totalChiVND = filteredChi.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
   const totalChiUSD = filteredChi.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
   const totalNhanVND = filteredNhan.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
@@ -96,7 +95,6 @@ export default function App() {
   const conVND = totalNhanVND - totalChiVND;
   const conUSD = totalNhanUSD - totalChiUSD;
 
-  // Staff stats
   const staffStats = {};
   filteredChi.forEach(r => {
     const name = (r.nguoiMua || "Không rõ").trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
@@ -116,17 +114,20 @@ export default function App() {
 
   // ── CRUD ──
   const saveRecord = async (collName, data, id) => {
+    const uid = user.uid;
+    const path = `users/${uid}/${collName}`;
     if (id) {
-      await updateDoc(doc(db, collName, id), { ...data, updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, path, id), { ...data, updatedAt: serverTimestamp() });
     } else {
-      await addDoc(collection(db, collName), { ...data, createdAt: serverTimestamp() });
+      await addDoc(collection(db, path), { ...data, createdAt: serverTimestamp() });
     }
     setModal(null);
   };
 
   const deleteRecord = async (collName, id) => {
     if (window.confirm("Xác nhận xóa?")) {
-      await deleteDoc(doc(db, collName, id));
+      const uid = user.uid;
+      await deleteDoc(doc(db, `users/${uid}/${collName}`, id));
     }
   };
 
@@ -137,13 +138,19 @@ export default function App() {
     { id: "staff", label: "Nhân Viên", icon: "user" },
   ];
 
+  if (authLoading) return <div className="auth-loading">Đang tải...</div>;
+  if (!user) return <LoginScreen />;
+
   return (
     <div className="app">
-      {/* HEADER */}
       <header className="header">
         <div className="header-brand">
           <Icon name="wallet" size={22} />
           <span>BILLS TRACKER</span>
+        </div>
+        <div className="header-user">
+          <span className="user-email">{user.email}</span>
+          <button className="btn-logout" onClick={() => signOut(auth)}>Đăng xuất</button>
         </div>
         <nav className="tab-nav">
           {tabs.map(t => (
@@ -155,17 +162,11 @@ export default function App() {
         </nav>
         <div className="month-filter">
           <span className="month-label">Tháng</span>
-          <input
-            type="month"
-            value={filterMonth}
-            onChange={e => setFilterMonth(e.target.value)}
-            className="month-input"
-          />
+          <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="month-input" />
           <button className="month-all-btn" onClick={() => setFilterMonth("")}>Tất cả</button>
         </div>
       </header>
 
-      {/* SUMMARY BAR */}
       <div className="summary-bar">
         <div className="sum-card red">
           <div className="sum-label">Tổng Chi VND</div>
@@ -184,11 +185,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
       <main className="main">
         {loading && <div className="loading">Đang tải dữ liệu...</div>}
 
-        {/* DASHBOARD */}
         {tab === "dashboard" && (
           <div className="section">
             <h2 className="section-title">Thống Kê Nhanh</h2>
@@ -198,12 +197,9 @@ export default function App() {
               <StatBox label="Số nhân viên" value={Object.keys(staffStats).length} unit="người" color="blue" />
               <StatBox label="Người nhập quỹ" value={Object.keys(nhanStats).length} unit="người" color="yellow" />
             </div>
-
             <h2 className="section-title" style={{marginTop: 32}}>Nhân Viên Thu Mua</h2>
             <table className="data-table">
-              <thead>
-                <tr><th>Tên</th><th>Số Acc</th><th>Chi VND</th><th>Chi USD</th><th>Tổng (VND quy đổi)</th></tr>
-              </thead>
+              <thead><tr><th>Tên</th><th>Số Acc</th><th>Chi VND</th><th>Chi USD</th><th>Tổng (VND quy đổi)</th></tr></thead>
               <tbody>
                 {Object.entries(staffStats).map(([name, s]) => (
                   <tr key={name}>
@@ -216,12 +212,9 @@ export default function App() {
                 ))}
               </tbody>
             </table>
-
             <h2 className="section-title" style={{marginTop: 32}}>Người Nhập Quỹ</h2>
             <table className="data-table">
-              <thead>
-                <tr><th>Tên</th><th>Nhập VND</th><th>Nhập USD</th><th>Tổng (VND quy đổi)</th></tr>
-              </thead>
+              <thead><tr><th>Tên</th><th>Nhập VND</th><th>Nhập USD</th><th>Tổng (VND quy đổi)</th></tr></thead>
               <tbody>
                 {Object.entries(nhanStats).map(([name, s]) => (
                   <tr key={name}>
@@ -236,19 +229,14 @@ export default function App() {
           </div>
         )}
 
-        {/* CHI */}
         {tab === "chi" && (
           <div className="section">
             <div className="section-header">
               <h2 className="section-title">Danh Sách Chi</h2>
-              <button className="btn-add" onClick={() => setModal({ type: "chi", data: null })}>
-                <Icon name="plus" size={14} /> Thêm
-              </button>
+              <button className="btn-add" onClick={() => setModal({ type: "chi", data: null })}><Icon name="plus" size={14} /> Thêm</button>
             </div>
             <table className="data-table">
-              <thead>
-                <tr><th>Ngày</th><th>Account</th><th>Số Tiền VND</th><th>Số Tiền USD</th><th>Người Mua</th><th>Ghi Chú</th><th></th></tr>
-              </thead>
+              <thead><tr><th>Ngày</th><th>Account</th><th>Số Tiền VND</th><th>Số Tiền USD</th><th>Người Mua</th><th>Ghi Chú</th><th></th></tr></thead>
               <tbody>
                 {filteredChi.map(r => (
                   <tr key={r.id} className={r.cancelled ? "cancelled" : ""}>
@@ -269,19 +257,14 @@ export default function App() {
           </div>
         )}
 
-        {/* NHAN */}
         {tab === "nhan" && (
           <div className="section">
             <div className="section-header">
               <h2 className="section-title">Nhập Quỹ</h2>
-              <button className="btn-add" onClick={() => setModal({ type: "nhan", data: null })}>
-                <Icon name="plus" size={14} /> Thêm
-              </button>
+              <button className="btn-add" onClick={() => setModal({ type: "nhan", data: null })}><Icon name="plus" size={14} /> Thêm</button>
             </div>
             <table className="data-table">
-              <thead>
-                <tr><th>Ngày</th><th>Số Tiền</th><th>Tiền Tệ</th><th>Người Chuyển</th><th>Ghi Chú</th><th></th></tr>
-              </thead>
+              <thead><tr><th>Ngày</th><th>Số Tiền</th><th>Tiền Tệ</th><th>Người Chuyển</th><th>Ghi Chú</th><th></th></tr></thead>
               <tbody>
                 {filteredNhan.map(r => (
                   <tr key={r.id}>
@@ -301,7 +284,6 @@ export default function App() {
           </div>
         )}
 
-        {/* STAFF */}
         {tab === "staff" && (
           <div className="section">
             <h2 className="section-title">Chi Tiết Nhân Viên Thu Mua</h2>
@@ -323,7 +305,6 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL */}
       {modal && (
         <Modal
           type={modal.type}
@@ -336,7 +317,6 @@ export default function App() {
   );
 }
 
-// ─── STAT BOX ────────────────────────────────────────────────────────────────
 function StatBox({ label, value, unit, color }) {
   return (
     <div className={`stat-box ${color}`}>
@@ -347,7 +327,6 @@ function StatBox({ label, value, unit, color }) {
   );
 }
 
-// ─── MODAL ───────────────────────────────────────────────────────────────────
 function Modal({ type, data, onClose, onSave }) {
   const isChi = type === "chi";
   const todayStr = new Date().toISOString().split("T")[0];
@@ -366,10 +345,7 @@ function Modal({ type, data, onClose, onSave }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = () => {
-    const payload = {
-      ...form,
-      soTien: parseFloat(String(form.soTien).replace(/,/g, "")) || 0,
-    };
+    const payload = { ...form, soTien: parseFloat(String(form.soTien).replace(/,/g, "")) || 0 };
     if (!isChi) delete payload.account;
     if (!isChi) delete payload.nguoiMua;
     if (isChi) delete payload.nguoiChuyen;
@@ -384,35 +360,20 @@ function Modal({ type, data, onClose, onSave }) {
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={16}/></button>
         </div>
         <div className="modal-body">
-          <Field label="Ngày">
-            <input type="date" value={form.ngay} onChange={e => set("ngay", e.target.value)} />
-          </Field>
-          {isChi && (
-            <Field label="Tên Account">
-              <input value={form.account} onChange={e => set("account", e.target.value)} placeholder="lord 35, nikke 14..." />
-            </Field>
-          )}
-          <Field label="Số Tiền">
-            <input type="number" value={form.soTien} onChange={e => set("soTien", e.target.value)} placeholder="0" />
-          </Field>
+          <Field label="Ngày"><input type="date" value={form.ngay} onChange={e => set("ngay", e.target.value)} /></Field>
+          {isChi && <Field label="Tên Account"><input value={form.account} onChange={e => set("account", e.target.value)} placeholder="lord 35, nikke 14..." /></Field>}
+          <Field label="Số Tiền"><input type="number" value={form.soTien} onChange={e => set("soTien", e.target.value)} placeholder="0" /></Field>
           <Field label="Tiền Tệ">
             <select value={form.currency} onChange={e => set("currency", e.target.value)}>
               <option value="VND">VND</option>
               <option value="USD">USD</option>
             </select>
           </Field>
-          {isChi ? (
-            <Field label="Người Mua">
-              <input value={form.nguoiMua} onChange={e => set("nguoiMua", e.target.value)} placeholder="H.Hiếu, C.Hùng..." />
-            </Field>
-          ) : (
-            <Field label="Người Chuyển">
-              <input value={form.nguoiChuyen} onChange={e => set("nguoiChuyen", e.target.value)} placeholder="A2 Chuyển, Nhập..." />
-            </Field>
-          )}
-          <Field label="Ghi Chú">
-            <input value={form.ghiChu} onChange={e => set("ghiChu", e.target.value)} placeholder="Ghi chú thêm..." />
-          </Field>
+          {isChi
+            ? <Field label="Người Mua"><input value={form.nguoiMua} onChange={e => set("nguoiMua", e.target.value)} placeholder="H.Hiếu, C.Hùng..." /></Field>
+            : <Field label="Người Chuyển"><input value={form.nguoiChuyen} onChange={e => set("nguoiChuyen", e.target.value)} placeholder="A2 Chuyển, Nhập..." /></Field>
+          }
+          <Field label="Ghi Chú"><input value={form.ghiChu} onChange={e => set("ghiChu", e.target.value)} placeholder="Ghi chú thêm..." /></Field>
           {isChi && (
             <Field label="">
               <label className="checkbox-label">
@@ -436,6 +397,50 @@ function Field({ label, children }) {
     <div className="field">
       {label && <label>{label}</label>}
       {children}
+    </div>
+  );
+}
+
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) { setError("Vui lòng nhập đầy đủ thông tin"); return; }
+    setLoading(true); setError("");
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      setError("Email hoặc mật khẩu không đúng");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-overlay">
+      <div className="login-box">
+        <div className="login-logo">
+          <span style={{fontSize:28}}>💰</span>
+          <div className="login-title">BILLS TRACKER</div>
+          <div className="login-sub">Đăng nhập để tiếp tục</div>
+        </div>
+        <div className="login-fields">
+          <div className="field">
+            <label>Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" onKeyDown={e => e.key === "Enter" && handleLogin()} />
+          </div>
+          <div className="field">
+            <label>Mật khẩu</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handleLogin()} />
+          </div>
+          {error && <div className="login-error">{error}</div>}
+          <button className="btn-login" onClick={handleLogin} disabled={loading}>
+            {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
