@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from "react";
 import {
-  collection, addDoc, onSnapshot, query, orderBy,
-  deleteDoc, doc, updateDoc, serverTimestamp
+  collection, addDoc, deleteDoc, doc, updateDoc, serverTimestamp
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onIdTokenChanged } from "firebase/auth";
 import "./styles/main.css";
 
 // ─── ICONS (inline SVG để không cần thư viện) ────────────────────────────────
@@ -25,7 +24,6 @@ const Icon = ({ name, size = 16 }) => {
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-const USD_RATE = 25400; // tỷ giá mặc định VND/USD
 const fmtVND = (n) => new Intl.NumberFormat("vi-VN").format(Math.round(n || 0)) + " đ";
 const fmtUSD = (n) => "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n || 0);
 const fmtDate = (row) => {
@@ -35,6 +33,129 @@ const fmtDate = (row) => {
   return d.toLocaleDateString("vi-VN");
 };
 
+const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${process.env.REACT_APP_FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+const RETRY_DELAY_MS = 500;
+const MAX_TOKEN_ATTEMPTS = 5;
+const ADMIN_UID = "76kdiqnd8sblIMR97u54RIXxZ5C2";
+const WHITELIST_EMAILS = [
+  "lengocthang.mb@gmail.com",
+  "torostore.sell@gmail.com"
+];
+
+const parseFirestoreValue = (value) => {
+  if (value === null) return null;
+  if (value.stringValue !== undefined) return value.stringValue;
+  if (value.integerValue !== undefined) return Number(value.integerValue);
+  if (value.doubleValue !== undefined) return Number(value.doubleValue);
+  if (value.booleanValue !== undefined) return value.booleanValue;
+  if (value.timestampValue !== undefined) return new Date(value.timestampValue).toISOString();
+  if (value.mapValue) {
+    const result = {};
+    const fields = value.mapValue.fields || {};
+    Object.entries(fields).forEach(([key, childValue]) => {
+      result[key] = parseFirestoreValue(childValue);
+    });
+    return result;
+  }
+  if (value.arrayValue) {
+    return (value.arrayValue.values || []).map(parseFirestoreValue);
+  }
+  return null;
+};
+
+const parseFirestoreDocument = (doc) => {
+  const data = {};
+  const fields = doc.fields || {};
+  Object.entries(fields).forEach(([key, value]) => {
+    data[key] = parseFirestoreValue(value);
+  });
+  if (data.createdAt && typeof data.createdAt === "string") {
+    data.createdAt = new Date(data.createdAt);
+  }
+  return { id: doc.name.split("/").pop(), ...data };
+};
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const loadCachedRows = (uid, key) => {
+  try {
+    const raw = window.localStorage.getItem(`${uid}_${key}`);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveCachedRows = (uid, key, rows) => {
+  try {
+    window.localStorage.setItem(`${uid}_${key}`, JSON.stringify(rows));
+  } catch (e) {
+    // ignore local storage failures
+  }
+};
+
+const getIdTokenWithRetry = async (user, retries = MAX_TOKEN_ATTEMPTS) => {
+  let lastError;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      const forceRefresh = attempt === retries - 1;
+      return await user.getIdToken(forceRefresh);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries - 1) {
+        await delay(RETRY_DELAY_MS);
+      }
+    }
+  }
+  throw lastError;
+};
+
+const fetchFirestoreCollection = async (path, token) => {
+  const url = `${FIRESTORE_BASE_URL}/${path}?pageSize=300`;
+  console.debug("Firestore REST fetch", { url, token: token ? "yes" : "no" });
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.debug("Firestore REST response", { status: response.status, statusText: response.statusText });
+  if (!response.ok) {
+    const body = await response.text();
+    const error = new Error(`Firestore REST error ${response.status}: ${body}`);
+    error.status = response.status;
+    throw error;
+  }
+  const json = await response.json();
+  console.debug("Firestore REST payload", json);
+  return (json.documents || []).map(parseFirestoreDocument);
+};
+
+const fetchCollectionWithAuth = async (user, path) => {
+  const token = await getIdTokenWithRetry(user);
+  try {
+    return await fetchFirestoreCollection(path, token);
+  } catch (error) {
+    if (error.status === 401) {
+      const refreshToken = await user.getIdToken(true);
+      return await fetchFirestoreCollection(path, refreshToken);
+    }
+    throw error;
+  }
+};
+
+const getRowDate = (r) => {
+  if (r.ngay) return new Date(r.ngay + "T00:00:00");
+  if (r.createdAt instanceof Date) return r.createdAt;
+  if (typeof r.createdAt === "string") return new Date(r.createdAt);
+  if (r.createdAt?.toDate) return r.createdAt.toDate();
+  return new Date();
+};
+
+const sortByOrderDateDesc = (rows) => [...rows].sort((a, b) => {
+  const aTime = getRowDate(a).getTime();
+  const bTime = getRowDate(b).getTime();
+  return bTime - aTime;
+});
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("dashboard");
@@ -42,100 +163,137 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onIdTokenChanged(auth, (u) => {
       setUser(u);
       setAuthLoading(false);
     });
-    return () => unsub();
+    return () => unsubscribe();
   }, []);
-  const [chiRows, setChiRows] = useState([]);
-  const [nhanRows, setNhanRows] = useState([]);
-  const [modal, setModal] = useState(null); // { type: 'chi'|'nhan', data: null|{...} }
-  const [loading, setLoading] = useState(true);
-  const now = new Date();
-  const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
 
-  // ── Realtime listeners ──
   useEffect(() => {
     if (!user) return;
-    const uid = user.uid;
-    const qChi = query(collection(db, `users/${uid}/chi`), orderBy("createdAt", "desc"));
-    const unsubChi = onSnapshot(qChi, (snap) => {
-      setChiRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    });
-    const qNhan = query(collection(db, `users/${uid}/nhan`), orderBy("createdAt", "desc"));
-    const unsubNhan = onSnapshot(qNhan, (snap) => {
-      setNhanRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return () => { unsubChi(); unsubNhan(); };
+    if (user.uid !== ADMIN_UID && !WHITELIST_EMAILS.includes(user.email)) {
+      signOut(auth);
+    }
   }, [user]);
 
-  // ── Filter by month ──
-  const getRowDate = (r) => {
-    if (r.ngay) return new Date(r.ngay + "T00:00:00");
-    if (r.createdAt?.toDate) return r.createdAt.toDate();
-    return new Date();
-  };
-  const inMonth = (r) => {
-    if (!filterMonth) return true;
-    const d = getRowDate(r);
-    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    return ym === filterMonth;
-  };
-  const filteredChi = chiRows.filter(inMonth);
-  const filteredNhan = nhanRows.filter(inMonth);
+  const [orders, setOrders] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [forums, setForums] = useState([]);
+  const [modal, setModal] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+  const [filterMonth, setFilterMonth] = useState(() => {
+    const saved = window.localStorage.getItem("filterMonth");
+    if (saved !== null) return saved;
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  });
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [forumFilter, setForumFilter] = useState("all");
 
-  // ── Aggregates (VND và USD tách biệt hoàn toàn) ──
-  const totalChiVND = filteredChi.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
-  const totalChiUSD = filteredChi.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
-  const totalNhanVND = filteredNhan.filter(r => r.currency === "VND").reduce((s, r) => s + (r.soTien || 0), 0);
-  const totalNhanUSD = filteredNhan.filter(r => r.currency === "USD").reduce((s, r) => s + (r.soTien || 0), 0);
-  const conVND = totalNhanVND - totalChiVND;
-  const conUSD = totalNhanUSD - totalChiUSD;
+  const fetchData = async (currentUser) => {
+    if (!currentUser) return;
+    setLoading(true);
+    setFetchError("");
+    await delay(RETRY_DELAY_MS);
+    try {
+      const [ordersRes, teamsRes, forumsRes] = await Promise.all([
+        fetchCollectionWithAuth(currentUser, "seller_orders"),
+        fetchCollectionWithAuth(currentUser, "seller_teams"),
+        fetchCollectionWithAuth(currentUser, "seller_forums"),
+      ]);
+      const sortedOrders = sortByOrderDateDesc(ordersRes);
+      setOrders(sortedOrders);
+      setTeams(teamsRes);
+      setForums(forumsRes);
+      if (currentUser?.uid) {
+        saveCachedRows(currentUser.uid, "orders", sortedOrders);
+        saveCachedRows(currentUser.uid, "teams", teamsRes);
+        saveCachedRows(currentUser.uid, "forums", forumsRes);
+      }
+    } catch (error) {
+      console.error("Failed to load Firestore data:", error);
+      if (currentUser?.uid) {
+        const cachedOrders = loadCachedRows(currentUser.uid, "orders");
+        const cachedTeams = loadCachedRows(currentUser.uid, "teams");
+        const cachedForums = loadCachedRows(currentUser.uid, "forums");
+        if (cachedOrders.length || cachedTeams.length || cachedForums.length) {
+          setOrders(cachedOrders);
+          setTeams(cachedTeams);
+          setForums(cachedForums);
+          setFetchError("Dữ liệu đang hiển thị từ bộ nhớ đệm vì không tải được dữ liệu mới.");
+        } else {
+          setFetchError("Không thể tải dữ liệu. Vui lòng thử lại hoặc kiểm tra kết nối.");
+        }
+      } else {
+        setFetchError("Không thể tải dữ liệu. Vui lòng thử lại hoặc kiểm tra kết nối.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Staff stats
-  const staffStats = {};
-  filteredChi.forEach(r => {
-    const name = (r.nguoiMua || "Không rõ").trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-    if (!staffStats[name]) staffStats[name] = { vnd: 0, usd: 0, accCount: 0 };
-    if (r.currency === "VND") staffStats[name].vnd += r.soTien || 0;
-    else staffStats[name].usd += r.soTien || 0;
-    staffStats[name].accCount += 1;
+  useEffect(() => {
+    if (!user) return;
+    fetchData(user);
+    const refreshTimer = setTimeout(() => fetchData(user), 1200);
+    return () => clearTimeout(refreshTimer);
+  }, [user]);
+
+  useEffect(() => {
+    window.localStorage.setItem("filterMonth", filterMonth);
+  }, [filterMonth]);
+
+  const statusOptions = [
+    "all",
+    ...Array.from(new Set(orders.map((order) => order.trangThai).filter(Boolean))),
+  ];
+  const teamOptions = ["all", ...Array.from(new Set(teams.map((team) => team.name).filter(Boolean)))];
+  const forumOptions = ["all", ...Array.from(new Set(forums.map((forum) => forum.name).filter(Boolean)))];
+
+  const filteredOrders = orders.filter((order) => {
+    const date = getRowDate(order);
+    const ym = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+    const matchesMonth = !filterMonth || ym === filterMonth;
+    const matchesStatus = statusFilter === "all" || order.trangThai === statusFilter;
+    const matchesTeam = teamFilter === "all" || order.team === teamFilter;
+    const matchesForum = forumFilter === "all" || order.forum === forumFilter;
+    return matchesMonth && matchesStatus && matchesTeam && matchesForum;
   });
 
-  const nhanStats = {};
-  filteredNhan.forEach(r => {
-    const name = (r.nguoiChuyen || "Không rõ").trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-    if (!nhanStats[name]) nhanStats[name] = { vnd: 0, usd: 0 };
-    if (r.currency === "VND") nhanStats[name].vnd += r.soTien || 0;
-    else nhanStats[name].usd += r.soTien || 0;
-  });
+  const totalOrders = filteredOrders.length;
+  const totalGiaNhap = filteredOrders.reduce((sum, order) => sum + (Number(order.giaNhap) || 0), 0);
+  const totalGiaBan = filteredOrders.reduce((sum, order) => sum + (Number(order.giaBan) || 0), 0);
+  const statusCounts = filteredOrders.reduce((acc, order) => {
+    const key = order.trangThai || "Không rõ";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
 
-  // ── CRUD ──
-  const saveRecord = async (collName, data, id) => {
-    const uid = user.uid;
-    const path = `users/${uid}/${collName}`;
+  const saveOrder = async (data, id) => {
     if (id) {
-      await updateDoc(doc(db, path, id), { ...data, updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, "seller_orders", id), { ...data, updatedAt: serverTimestamp() });
     } else {
-      await addDoc(collection(db, path), { ...data, createdAt: serverTimestamp() });
+      await addDoc(collection(db, "seller_orders"), { ...data, createdAt: serverTimestamp() });
     }
     setModal(null);
+    setTimeout(() => fetchData(user), 600);
   };
 
-  const deleteRecord = async (collName, id) => {
-    if (window.confirm("Xác nhận xóa?")) {
-      const uid = user.uid;
-      await deleteDoc(doc(db, `users/${uid}/${collName}`, id));
+  const deleteOrder = async (id) => {
+    if (window.confirm("Xác nhận xóa đơn hàng?")) {
+      await deleteDoc(doc(db, "seller_orders", id));
+      setTimeout(() => fetchData(user), 600);
     }
   };
 
   const tabs = [
     { id: "dashboard", label: "Tổng Quan", icon: "chart" },
-    { id: "chi", label: "Chi", icon: "arrow_down" },
-    { id: "nhan", label: "Nhập Quỹ", icon: "arrow_up" },
-    { id: "staff", label: "Nhân Viên", icon: "user" },
+    { id: "orders", label: "Đơn Hàng", icon: "arrow_up" },
+    { id: "teams", label: "Teams", icon: "user" },
+    { id: "forums", label: "Forums", icon: "wallet" },
   ];
 
   if (authLoading) return <div className="auth-loading">Đang tải...</div>;
@@ -147,7 +305,7 @@ export default function App() {
       <header className="header">
         <div className="header-brand">
           <Icon name="wallet" size={22} />
-          <span>BILLS TRACKER</span>
+          <span>SELLER TRACKER</span>
         </div>
         <div className="header-user">
           <span className="user-email">{user.email}</span>
@@ -173,70 +331,53 @@ export default function App() {
         </div>
       </header>
 
-      {/* SUMMARY BAR */}
+      {fetchError && <div className="fetch-error">{fetchError}</div>}
       <div className="summary-bar">
+        <div className="sum-card blue">
+          <div className="sum-label">Tổng đơn</div>
+          <div className="sum-value">{totalOrders}</div>
+          <div className="sum-sub2">Teams: {teams.length} · Forums: {forums.length}</div>
+        </div>
         <div className="sum-card red">
-          <div className="sum-label">Tổng Chi VND</div>
-          <div className="sum-value">{fmtVND(totalChiVND)}</div>
-          <div className="sum-sub2">Chi USD: {fmtUSD(totalChiUSD)}</div>
+          <div className="sum-label">Tổng giá nhập</div>
+          <div className="sum-value">{fmtVND(totalGiaNhap)}</div>
+          <div className="sum-sub2">Giá nhập</div>
         </div>
         <div className="sum-card green">
-          <div className="sum-label">Tổng Nhập VND</div>
-          <div className="sum-value">{fmtVND(totalNhanVND)}</div>
-          <div className="sum-sub2">Nhập USD: {fmtUSD(totalNhanUSD)}</div>
+          <div className="sum-label">Tổng giá bán</div>
+          <div className="sum-value">{fmtUSD(totalGiaBan)}</div>
+          <div className="sum-sub2">Giá bán</div>
         </div>
-        <div className={`sum-card ${conVND >= 0 ? "blue" : "red"}`}>
-          <div className="sum-label">Còn VND</div>
-          <div className="sum-value">{fmtVND(conVND)}</div>
-          <div className={`sum-sub2 ${conUSD >= 0 ? "green-text" : "red-text"}`}>Còn USD: {fmtUSD(conUSD)}</div>
+        <div className="sum-card yellow">
+          <div className="sum-label">Pending</div>
+          <div className="sum-value">{statusCounts.Pending || 0}</div>
+          <div className="sum-sub2">Completed: {statusCounts.Completed || 0}</div>
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
       <main className="main">
         {loading && <div className="loading">Đang tải dữ liệu...</div>}
 
-        {/* DASHBOARD */}
         {tab === "dashboard" && (
           <div className="section">
-            <h2 className="section-title">Thống Kê Nhanh</h2>
+            <h2 className="section-title">Tổng Quan</h2>
             <div className="stats-grid">
-              <StatBox label="Tổng giao dịch chi" value={chiRows.length} unit="giao dịch" color="red" />
-              <StatBox label="Tổng giao dịch nhập" value={nhanRows.length} unit="giao dịch" color="green" />
-              <StatBox label="Số nhân viên" value={Object.keys(staffStats).length} unit="người" color="blue" />
-              <StatBox label="Người nhập quỹ" value={Object.keys(nhanStats).length} unit="người" color="yellow" />
+              <StatBox label="Tổng đơn" value={totalOrders} unit="đơn" color="blue" />
+              <StatBox label="Tổng giá nhập" value={fmtVND(totalGiaNhap)} unit="" color="red" />
+              <StatBox label="Tổng giá bán" value={fmtUSD(totalGiaBan)} unit="" color="green" />
+              <StatBox label="Pending" value={statusCounts.Pending || 0} unit="đơn" color="yellow" />
             </div>
 
-            <h2 className="section-title" style={{marginTop: 32}}>Nhân Viên Thu Mua</h2>
+            <h2 className="section-title" style={{ marginTop: 32 }}>Trạng thái đơn hàng</h2>
             <table className="data-table">
               <thead>
-                <tr><th>Tên</th><th>Số Acc</th><th>Chi VND</th><th>Chi USD</th><th>Tổng (VND quy đổi)</th></tr>
+                <tr><th>Trạng thái</th><th>Số lượng</th></tr>
               </thead>
               <tbody>
-                {Object.entries(staffStats).map(([name, s]) => (
-                  <tr key={name}>
-                    <td><span className="badge blue">{name}</span></td>
-                    <td className="num">{s.accCount}</td>
-                    <td className="num red-text">{fmtVND(s.vnd)}</td>
-                    <td className="num red-text">{fmtUSD(s.usd)}</td>
-                    <td className="num red-text">{fmtVND(s.vnd + s.usd * USD_RATE)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <h2 className="section-title" style={{marginTop: 32}}>Người Nhập Quỹ</h2>
-            <table className="data-table">
-              <thead>
-                <tr><th>Tên</th><th>Nhập VND</th><th>Nhập USD</th><th>Tổng (VND quy đổi)</th></tr>
-              </thead>
-              <tbody>
-                {Object.entries(nhanStats).map(([name, s]) => (
-                  <tr key={name}>
-                    <td><span className="badge green">{name}</span></td>
-                    <td className="num green-text">{fmtVND(s.vnd)}</td>
-                    <td className="num green-text">{fmtUSD(s.usd)}</td>
-                    <td className="num green-text">{fmtVND(s.vnd + s.usd * USD_RATE)}</td>
+                {Object.entries(statusCounts).map(([status, count]) => (
+                  <tr key={status}>
+                    <td>{status}</td>
+                    <td className="num">{count}</td>
                   </tr>
                 ))}
               </tbody>
@@ -244,31 +385,49 @@ export default function App() {
           </div>
         )}
 
-        {/* CHI */}
-        {tab === "chi" && (
+        {tab === "orders" && (
           <div className="section">
             <div className="section-header">
-              <h2 className="section-title">Danh Sách Chi</h2>
-              <button className="btn-add" onClick={() => setModal({ type: "chi", data: null })}>
-                <Icon name="plus" size={14} /> Thêm
+              <h2 className="section-title">Danh Sách Đơn Hàng</h2>
+              <button className="btn-add" onClick={() => setModal({ type: "order", data: null })}>
+                <Icon name="plus" size={14} /> Thêm đơn
               </button>
+            </div>
+            <div className="filter-row">
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>{status === "all" ? "Tất cả trạng thái" : status}</option>
+                ))}
+              </select>
+              <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}>
+                {teamOptions.map((team) => (
+                  <option key={team} value={team}>{team === "all" ? "Tất cả team" : team}</option>
+                ))}
+              </select>
+              <select value={forumFilter} onChange={(e) => setForumFilter(e.target.value)}>
+                {forumOptions.map((forum) => (
+                  <option key={forum} value={forum}>{forum === "all" ? "Tất cả forum" : forum}</option>
+                ))}
+              </select>
             </div>
             <table className="data-table">
               <thead>
-                <tr><th>Ngày</th><th>Account</th><th>Số Tiền VND</th><th>Số Tiền USD</th><th>Người Mua</th><th>Ghi Chú</th><th></th></tr>
+                <tr><th>Ngày</th><th>ID ĐH</th><th>Giá nhập</th><th>Giá bán</th><th>Team</th><th>Forum</th><th>Link</th><th>Trạng thái</th><th></th></tr>
               </thead>
               <tbody>
-                {filteredChi.map(r => (
-                  <tr key={r.id} className={r.cancelled ? "cancelled" : ""}>
-                    <td>{fmtDate(r)}</td>
-                    <td><span className="acc-name">{r.account}</span></td>
-                    <td className="num red-text">{r.currency === "VND" ? fmtVND(r.soTien) : ""}</td>
-                    <td className="num yellow-text">{r.currency === "USD" ? fmtUSD(r.soTien) : ""}</td>
-                    <td><span className="badge blue">{r.nguoiMua}</span></td>
-                    <td className="note-cell">{r.ghiChu}</td>
+                {filteredOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td>{fmtDate(order)}</td>
+                    <td>{order.orderId || "-"}</td>
+                    <td className="num red-text">{fmtVND(order.giaNhap)}</td>
+                    <td className="num green-text">{fmtUSD(order.giaBan)}</td>
+                    <td>{order.team || "-"}</td>
+                    <td>{order.forum || "-"}</td>
+                    <td>{order.link ? <a href={order.link} target="_blank" rel="noreferrer">Link</a> : "-"}</td>
+                    <td><span className="badge yellow">{order.trangThai || "-"}</span></td>
                     <td className="actions">
-                      <button className="icon-btn" onClick={() => setModal({ type: "chi", data: r })}><Icon name="edit" size={13}/></button>
-                      <button className="icon-btn danger" onClick={() => deleteRecord("chi", r.id)}><Icon name="trash" size={13}/></button>
+                      <button className="icon-btn" onClick={() => setModal({ type: "order", data: order })}><Icon name="edit" size={13} /></button>
+                      <button className="icon-btn danger" onClick={() => deleteOrder(order.id)}><Icon name="trash" size={13} /></button>
                     </td>
                   </tr>
                 ))}
@@ -277,31 +436,18 @@ export default function App() {
           </div>
         )}
 
-        {/* NHAN */}
-        {tab === "nhan" && (
+        {tab === "teams" && (
           <div className="section">
-            <div className="section-header">
-              <h2 className="section-title">Nhập Quỹ</h2>
-              <button className="btn-add" onClick={() => setModal({ type: "nhan", data: null })}>
-                <Icon name="plus" size={14} /> Thêm
-              </button>
-            </div>
+            <h2 className="section-title">Teams</h2>
             <table className="data-table">
               <thead>
-                <tr><th>Ngày</th><th>Số Tiền</th><th>Tiền Tệ</th><th>Người Chuyển</th><th>Ghi Chú</th><th></th></tr>
+                <tr><th>Tên Team</th><th>Ngày tạo</th></tr>
               </thead>
               <tbody>
-                {filteredNhan.map(r => (
-                  <tr key={r.id}>
-                    <td>{fmtDate(r)}</td>
-                    <td className="num green-text">{r.currency === "USD" ? fmtUSD(r.soTien) : fmtVND(r.soTien)}</td>
-                    <td><span className={`badge ${r.currency === "USD" ? "yellow" : "green"}`}>{r.currency}</span></td>
-                    <td><span className="badge green">{r.nguoiChuyen}</span></td>
-                    <td className="note-cell">{r.ghiChu}</td>
-                    <td className="actions">
-                      <button className="icon-btn" onClick={() => setModal({ type: "nhan", data: r })}><Icon name="edit" size={13}/></button>
-                      <button className="icon-btn danger" onClick={() => deleteRecord("nhan", r.id)}><Icon name="trash" size={13}/></button>
-                    </td>
+                {teams.map((team) => (
+                  <tr key={team.id}>
+                    <td>{team.name}</td>
+                    <td>{team.createdAt ? new Date(team.createdAt).toLocaleDateString("vi-VN") : "-"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -309,35 +455,32 @@ export default function App() {
           </div>
         )}
 
-        {/* STAFF */}
-        {tab === "staff" && (
+        {tab === "forums" && (
           <div className="section">
-            <h2 className="section-title">Chi Tiết Nhân Viên Thu Mua</h2>
-            <div className="staff-grid">
-              {Object.entries(staffStats).map(([name, s]) => (
-                <div key={name} className="staff-card">
-                  <div className="staff-avatar">{name[0]}</div>
-                  <div className="staff-name">{name}</div>
-                  <div className="staff-rows">
-                    <div className="staff-row"><span>Số Acc</span><span className="num">{s.accCount}</span></div>
-                    <div className="staff-row"><span>Chi VND</span><span className="num red-text">{fmtVND(s.vnd)}</span></div>
-                    <div className="staff-row"><span>Chi USD</span><span className="num red-text">{fmtUSD(s.usd)}</span></div>
-                    <div className="staff-row total"><span>Tổng</span><span className="num red-text">{fmtVND(s.vnd + s.usd * USD_RATE)}</span></div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <h2 className="section-title">Forums</h2>
+            <table className="data-table">
+              <thead>
+                <tr><th>Tên Forum</th><th>Ngày tạo</th></tr>
+              </thead>
+              <tbody>
+                {forums.map((forum) => (
+                  <tr key={forum.id}>
+                    <td>{forum.name}</td>
+                    <td>{forum.createdAt ? new Date(forum.createdAt).toLocaleDateString("vi-VN") : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </main>
 
-      {/* MODAL */}
       {modal && (
         <Modal
           type={modal.type}
           data={modal.data}
           onClose={() => setModal(null)}
-          onSave={(data, id) => saveRecord(modal.type === "chi" ? "chi" : "nhan", data, id)}
+          onSave={saveOrder}
         />
       )}
     </div>
@@ -357,82 +500,70 @@ function StatBox({ label, value, unit, color }) {
 
 // ─── MODAL ───────────────────────────────────────────────────────────────────
 function Modal({ type, data, onClose, onSave }) {
-  const isChi = type === "chi";
   const todayStr = new Date().toISOString().split("T")[0];
   const existingDate = data?.ngay || (data?.createdAt?.toDate ? data.createdAt.toDate().toISOString().split("T")[0] : todayStr);
   const [form, setForm] = useState({
-    account: data?.account || "",
-    soTien: data?.soTien || "",
-    currency: data?.currency || "VND",
-    nguoiMua: data?.nguoiMua || "",
-    nguoiChuyen: data?.nguoiChuyen || "",
-    ghiChu: data?.ghiChu || "",
-    cancelled: data?.cancelled || false,
+    orderId: data?.orderId || "",
+    giaNhap: data?.giaNhap || "",
+    giaBan: data?.giaBan || "",
+    team: data?.team || "",
+    forum: data?.forum || "",
+    link: data?.link || "",
+    trangThai: data?.trangThai || "Pending",
     ngay: existingDate,
   });
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleSave = () => {
     const payload = {
       ...form,
-      soTien: parseFloat(String(form.soTien).replace(/,/g, "")) || 0,
+      giaNhap: parseFloat(String(form.giaNhap).replace(/,/g, "")) || 0,
+      giaBan: parseFloat(String(form.giaBan).replace(/,/g, "")) || 0,
     };
-    if (!isChi) delete payload.account;
-    if (!isChi) delete payload.nguoiMua;
-    if (isChi) delete payload.nguoiChuyen;
     onSave(payload, data?.id);
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{data ? "Sửa" : "Thêm"} {isChi ? "Chi" : "Nhập Quỹ"}</span>
-          <button className="icon-btn" onClick={onClose}><Icon name="close" size={16}/></button>
+          <span>{data ? "Sửa" : "Thêm"} đơn hàng</span>
+          <button className="icon-btn" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
         <div className="modal-body">
           <Field label="Ngày">
-            <input type="date" value={form.ngay} onChange={e => set("ngay", e.target.value)} />
+            <input type="date" value={form.ngay} onChange={(e) => set("ngay", e.target.value)} />
           </Field>
-          {isChi && (
-            <Field label="Tên Account">
-              <input value={form.account} onChange={e => set("account", e.target.value)} placeholder="lord 35, nikke 14..." />
-            </Field>
-          )}
-          <Field label="Số Tiền">
-            <input type="number" value={form.soTien} onChange={e => set("soTien", e.target.value)} placeholder="0" />
+          <Field label="Mã đơn hàng">
+            <input value={form.orderId} onChange={(e) => set("orderId", e.target.value)} placeholder="ID đơn hàng" />
           </Field>
-          <Field label="Tiền Tệ">
-            <select value={form.currency} onChange={e => set("currency", e.target.value)}>
-              <option value="VND">VND</option>
-              <option value="USD">USD</option>
+          <Field label="Giá nhập">
+            <input type="number" value={form.giaNhap} onChange={(e) => set("giaNhap", e.target.value)} placeholder="0" />
+          </Field>
+          <Field label="Giá bán">
+            <input type="number" value={form.giaBan} onChange={(e) => set("giaBan", e.target.value)} placeholder="0" />
+          </Field>
+          <Field label="Team">
+            <input value={form.team} onChange={(e) => set("team", e.target.value)} placeholder="Team" />
+          </Field>
+          <Field label="Forum">
+            <input value={form.forum} onChange={(e) => set("forum", e.target.value)} placeholder="Forum" />
+          </Field>
+          <Field label="Link">
+            <input value={form.link} onChange={(e) => set("link", e.target.value)} placeholder="https://..." />
+          </Field>
+          <Field label="Trạng thái">
+            <select value={form.trangThai} onChange={(e) => set("trangThai", e.target.value)}>
+              <option value="Pending">Pending</option>
+              <option value="Completed">Completed</option>
+              <option value="Issue">Issue</option>
             </select>
           </Field>
-          {isChi ? (
-            <Field label="Người Mua">
-              <input value={form.nguoiMua} onChange={e => set("nguoiMua", e.target.value)} placeholder="H.Hiếu, C.Hùng..." />
-            </Field>
-          ) : (
-            <Field label="Người Chuyển">
-              <input value={form.nguoiChuyen} onChange={e => set("nguoiChuyen", e.target.value)} placeholder="A2 Chuyển, Nhập..." />
-            </Field>
-          )}
-          <Field label="Ghi Chú">
-            <input value={form.ghiChu} onChange={e => set("ghiChu", e.target.value)} placeholder="Ghi chú thêm..." />
-          </Field>
-          {isChi && (
-            <Field label="">
-              <label className="checkbox-label">
-                <input type="checkbox" checked={form.cancelled} onChange={e => set("cancelled", e.target.checked)} />
-                Cancel / Hoàn Tiền
-              </label>
-            </Field>
-          )}
         </div>
         <div className="modal-footer">
           <button className="btn-cancel" onClick={onClose}>Hủy</button>
-          <button className="btn-save" onClick={handleSave}><Icon name="check" size={14}/> Lưu</button>
+          <button className="btn-save" onClick={handleSave}><Icon name="check" size={14} /> Lưu</button>
         </div>
       </div>
     </div>
@@ -459,9 +590,31 @@ function LoginScreen() {
     if (!email || !password) { setError("Vui lòng nhập đầy đủ thông tin"); return; }
     setLoading(true); setError("");
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      if (credential.user.uid !== ADMIN_UID) {
+        await signOut(auth);
+        setError("Chỉ admin mới được phép đăng nhập bằng Email/Mật khẩu.");
+        setLoading(false);
+      }
     } catch (e) {
       setError("Email hoặc mật khẩu không đúng");
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoading(true); setError("");
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const signedUser = result.user;
+      if (!WHITELIST_EMAILS.includes(signedUser.email)) {
+        await signOut(auth);
+        setError("Email chưa được phép truy cập.");
+        setLoading(false);
+      }
+    } catch (e) {
+      setError("Đăng nhập Google thất bại");
       setLoading(false);
     }
   };
@@ -471,17 +624,21 @@ function LoginScreen() {
       <div className="login-box">
         <div className="login-logo">
           <span style={{fontSize:28}}>💰</span>
-          <div className="login-title">BILLS TRACKER</div>
-          <div className="login-sub">Đăng nhập để tiếp tục</div>
+          <div className="login-title">SELLER TRACKER</div>
+          <div className="login-sub">Đăng nhập Google cho seller, Email/Mật khẩu cho admin</div>
         </div>
         <div className="login-fields">
+          <button className="btn-login" onClick={handleGoogleLogin} disabled={loading}>
+            {loading ? "Đang đăng nhập..." : "Đăng nhập với Google"}
+          </button>
+          <div className="divider">hoặc</div>
           <div className="field">
             <label>Email</label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="your@email.com"
+              placeholder="admin@example.com"
               onKeyDown={e => e.key === "Enter" && handleLogin()}
             />
           </div>

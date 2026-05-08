@@ -129,6 +129,10 @@ body {
 /* ── SECTION ─────────────────────────────────────────────────── */
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 14px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.filter-row select { min-width: 172px; padding: 10px 12px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: var(--sans); font-size: 13px; }
+.data-table a { color: var(--blue); text-decoration: none; }
+.data-table a:hover { text-decoration: underline; }
 
 /* ── STATS GRID ──────────────────────────────────────────────── */
 .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
@@ -353,6 +357,12 @@ body {
 }
 .login-sub { font-size: 12px; color: var(--text-dim); }
 .login-fields { display: flex; flex-direction: column; gap: 16px; }
+.divider {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 0;
+}
 .login-error {
   padding: 10px 12px;
   background: var(--red-dim);
@@ -360,6 +370,17 @@ body {
   border-radius: 7px;
   color: var(--red);
   font-size: 13px;
+  text-align: center;
+}
+.fetch-error {
+  margin: 18px auto 0;
+  padding: 12px 14px;
+  max-width: 980px;
+  background: rgba(244,63,94,0.08);
+  border: 1px solid rgba(244,63,94,0.25);
+  border-radius: 12px;
+  color: var(--red);
+  font-size: 14px;
   text-align: center;
 }
 .btn-login {
