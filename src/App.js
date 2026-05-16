@@ -180,20 +180,51 @@ export default function App() {
   // ── Firestore — user data + shared settings ──
   useEffect(() => {
     if (!user) return;
-    const uid = user.uid;
-    const qChi  = query(collection(db, `users/${uid}/chi`),  orderBy("createdAt","desc"));
-    const qNhan = query(collection(db, `users/${uid}/nhan`), orderBy("createdAt","desc"));
-    const u1 = onSnapshot(qChi,  s => { setChiRows(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); });
-    const u2 = onSnapshot(qNhan, s => setNhanRows(s.docs.map(d=>({id:d.id,...d.data()}))));
-    // Subscribe to admin-set USD rate (shared across all users)
+    const isAdminUser = user.email === ADMIN_EMAIL;
+
+    // Settings subscription (shared for all users)
     const u3 = onSnapshot(doc(db, "settings", "rates"), snap => {
       if (snap.exists() && snap.data().usdRate) {
         const rate = snap.data().usdRate;
         setUsdRate(rate);
         localStorage.setItem("usdRate", String(rate));
       }
-    }, () => {}); // silent on permission error
-    return () => { u1(); u2(); u3(); };
+    }, () => {});
+
+    if (!isAdminUser) {
+      // Normal user: real-time subscription to own subcollections
+      const uid = user.uid;
+      const qChi  = query(collection(db, `users/${uid}/chi`),  orderBy("createdAt","desc"));
+      const qNhan = query(collection(db, `users/${uid}/nhan`), orderBy("createdAt","desc"));
+      const u1 = onSnapshot(qChi,  s => { setChiRows(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); });
+      const u2 = onSnapshot(qNhan, s => setNhanRows(s.docs.map(d=>({id:d.id,...d.data()}))));
+      return () => { u1(); u2(); u3(); };
+    } else {
+      // Admin: load ALL users' chi/nhan combined so dashboard shows full picture
+      const loadAll = async () => {
+        try {
+          const uSnap = await getDocs(collection(db, "users"));
+          const uids = [];
+          uSnap.forEach(d => uids.push(d.id));
+          const allChi = [], allNhan = [];
+          await Promise.all(uids.map(async uid => {
+            try {
+              const [cSnap, nSnap] = await Promise.all([
+                getDocs(collection(db, `users/${uid}/chi`)),
+                getDocs(collection(db, `users/${uid}/nhan`)),
+              ]);
+              cSnap.forEach(d => allChi.push({ id: d.id, ...d.data() }));
+              nSnap.forEach(d => allNhan.push({ id: d.id, ...d.data() }));
+            } catch {}
+          }));
+          setChiRows(allChi);
+          setNhanRows(allNhan);
+        } catch {}
+        setLoading(false);
+      };
+      loadAll();
+      return () => { u3(); };
+    }
   }, [user]);
 
   // ── Close export dropdown on outside click ──
