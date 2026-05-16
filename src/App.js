@@ -158,21 +158,21 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
 
-  // ── Auth — also registers user in registeredUsers on login ──
+  // ── Auth — write user profile to users/{uid} doc so admin can list all users ──
   useEffect(() => {
     return onAuthStateChanged(auth, async u => {
       setUser(u);
       setAuthLoading(false);
       if (u) {
-        try {
-          await setDoc(doc(db, "registeredUsers", u.uid), {
-            email: u.email,
-            displayName: u.displayName || "",
-            lastSeen: serverTimestamp(),
-          }, { merge: true });
-        } catch {
-          // Silent — rules may not be set up yet; non-blocking
-        }
+        const profile = {
+          email: u.email,
+          displayName: u.displayName || "",
+          lastSeen: serverTimestamp(),
+        };
+        // Write to users/{uid} so admin can list via getDocs(collection(db,"users"))
+        try { await setDoc(doc(db, "users", u.uid), profile, { merge: true }); } catch {}
+        // Also write to registeredUsers as fallback
+        try { await setDoc(doc(db, "registeredUsers", u.uid), profile, { merge: true }); } catch {}
       }
     });
   }, []);
@@ -871,8 +871,18 @@ function AdminPage({ usdRate }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const regSnap = await getDocs(collection(db, "registeredUsers"));
-        const users   = regSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        // Primary: list users/{uid} documents (written on every login)
+        const usersSnap = await getDocs(collection(db, "users"));
+        let users = usersSnap.docs
+          .filter(d => d.data().email)
+          .map(d => ({ uid: d.id, ...d.data() }));
+
+        // Fallback: registeredUsers collection
+        if (users.length === 0) {
+          const regSnap = await getDocs(collection(db, "registeredUsers"));
+          users = regSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        }
+
         setUserList(users);
 
         const chiMap = {}, nhanMap = {};

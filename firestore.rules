@@ -2,7 +2,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Per-user data — owner or admin can read/write
+    // User profile document users/{uid} — admin can list all users
+    match /users/{uid} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == uid ||
+         request.auth.token.email == 'lengocthang.mb@gmail.com');
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Per-user data subcollections — owner or admin can read/write
     match /users/{uid}/{col}/{docId} {
       allow read, write: if request.auth != null &&
         (request.auth.uid == uid ||
