@@ -845,6 +845,8 @@ function AdminPage({ usdRate }) {
   const [allNhan,    setAllNhan]    = useState({});
   const [adminLoad,  setAdminLoad]  = useState(true);
   const [adminError, setAdminError] = useState(null);
+  const [editingUid, setEditingUid] = useState(null);
+  const [nameDraft,  setNameDraft]  = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -982,11 +984,11 @@ function AdminPage({ usdRate }) {
           </span>
           <span style={{fontSize:11,color:"var(--text-dim)"}}>Tất cả thời gian</span>
         </div>
-        {userList.length === 0 ? <EmptyState text="Chưa có user đăng ký (cần cập nhật Firestore rules)"/> : (
+        {userList.length === 0 ? <EmptyState text="Chưa có dữ liệu"/> : (
           <div style={{overflowX:"auto"}}>
             <table className="data-table">
               <thead><tr>
-                <th>Email</th>
+                <th>Tên / Email</th>
                 <th>Lần Cuối</th>
                 <th style={{textAlign:"right"}}>Giao Dịch</th>
                 <th style={{textAlign:"right"}}>Chi VND</th>
@@ -1007,9 +1009,45 @@ function AdminPage({ usdRate }) {
                   const seen = u.lastSeen?.toDate
                     ? u.lastSeen.toDate().toLocaleDateString("vi-VN")
                     : "—";
+                  const displayLabel = u.displayName || u.email;
+                  const isEditing = editingUid === u.uid;
+
+                  const saveDisplayName = async () => {
+                    const name = nameDraft.trim();
+                    if (name) {
+                      await setDoc(doc(db, "users", u.uid), { displayName: name }, { merge: true });
+                      setUserList(prev => prev.map(x => x.uid === u.uid ? { ...x, displayName: name } : x));
+                    }
+                    setEditingUid(null);
+                  };
+
                   return (
                     <tr key={u.uid}>
-                      <td><span className="badge blue">{u.email}</span></td>
+                      <td>
+                        {isEditing ? (
+                          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                            <input
+                              value={nameDraft}
+                              onChange={e => setNameDraft(e.target.value)}
+                              onKeyDown={e => { if(e.key==="Enter") saveDisplayName(); if(e.key==="Escape") setEditingUid(null); }}
+                              autoFocus
+                              style={{background:"var(--bg3)",border:"1px solid var(--blue)",borderRadius:6,padding:"4px 8px",color:"var(--text)",fontSize:12,outline:"none",width:160}}
+                            />
+                            <button onClick={saveDisplayName} className="icon-btn" style={{color:"var(--green)"}}><Icon name="check" size={12}/></button>
+                            <button onClick={() => setEditingUid(null)} className="icon-btn"><Icon name="close" size={12}/></button>
+                          </div>
+                        ) : (
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <span className="badge blue">{displayLabel}</span>
+                            {u.displayName && <span style={{fontSize:10,color:"var(--text-dim)"}}>{u.email}</span>}
+                            <button
+                              className="icon-btn"
+                              title="Đặt tên hiển thị"
+                              onClick={() => { setEditingUid(u.uid); setNameDraft(u.displayName || ""); }}
+                            ><Icon name="edit" size={11}/></button>
+                          </div>
+                        )}
+                      </td>
                       <td className="date-cell">{seen}</td>
                       <td className="num">{chi.length}</td>
                       <td className="num red-text">{fmtVND(cVND)}</td>
