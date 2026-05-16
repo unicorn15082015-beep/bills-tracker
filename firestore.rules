@@ -17,6 +17,16 @@ service cloud.firestore {
          request.auth.token.email == 'lengocthang.mb@gmail.com');
     }
 
+    // Collection group queries (admin only) — lets admin query all chi/nhan at once
+    match /{path=**}/chi/{docId} {
+      allow read: if request.auth != null &&
+        request.auth.token.email == 'lengocthang.mb@gmail.com';
+    }
+    match /{path=**}/nhan/{docId} {
+      allow read: if request.auth != null &&
+        request.auth.token.email == 'lengocthang.mb@gmail.com';
+    }
+
     // Registered users — each user writes their own, admin reads all
     match /registeredUsers/{uid} {
       allow write: if request.auth != null && request.auth.uid == uid;
