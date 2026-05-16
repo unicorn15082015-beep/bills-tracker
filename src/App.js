@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   collection, addDoc, onSnapshot, query, orderBy,
-  deleteDoc, doc, updateDoc, serverTimestamp
+  deleteDoc, doc, updateDoc, serverTimestamp, setDoc, getDocs
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
 import "./styles/main.css";
 
 // ── ICONS ──────────────────────────────────────────────────────────────────────
@@ -36,11 +36,14 @@ const Icon = ({ name, size = 16 }) => {
     eye_off:    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
     file_text:  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
     info:       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+    shield:     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+    users:      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   };
   return icons[name] || null;
 };
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
+const ADMIN_EMAIL = "lengocthang.mb@gmail.com";
 const DEFAULT_USD_RATE = 25400;
 const fmtVND = (n) => new Intl.NumberFormat("vi-VN").format(Math.round(n || 0)) + " đ";
 const fmtUSD = (n) => "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n || 0);
@@ -64,6 +67,20 @@ const getRowDate = (r) => {
   return new Date();
 };
 const todayISO = () => new Date().toISOString().split("T")[0];
+
+// Fix Vietnamese capitalization: split on spaces instead of using \b\w
+const normalizeName = (s) =>
+  (s || "Không rõ").trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ") || "Không rõ";
+
+// Extract game name from account string (e.g. "lord 35" → "Lord")
+const extractGame = (account) => {
+  const first = (account || "Khác").trim().split(/\s+/)[0];
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+};
 
 // ── EXPORT HELPERS ────────────────────────────────────────────────────────────
 const downloadFile = (content, filename, mime) => {
@@ -99,7 +116,19 @@ const TABS = [
   { id: "nhan",      label: "Nhập Quỹ",    icon: "arrow_up" },
   { id: "staff",     label: "Nhân Viên",   icon: "user" },
 ];
-const PAGE_TITLES = { dashboard: "Tổng Quan", chi: "Danh Sách Chi", nhan: "Nhập Quỹ", staff: "Nhân Viên" };
+const PAGE_TITLES = {
+  dashboard: "Tổng Quan",
+  chi:       "Danh Sách Chi",
+  nhan:      "Nhập Quỹ",
+  staff:     "Nhân Viên",
+  admin:     "Admin — Hệ Thống",
+};
+
+// Bar colors for game chart
+const GAME_COLORS = [
+  "#4f8ef7","#a78bfa","#05d890","#fbbf24","#ff4d6d",
+  "#38bdf8","#fb7185","#34d399","#f472b6","#60a5fa",
+];
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
@@ -108,13 +137,12 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [chiRows, setChiRows]     = useState([]);
   const [nhanRows, setNhanRows]   = useState([]);
-  const [modal, setModal]         = useState(null);    // { type, data }
-  const [confirm, setConfirm]     = useState(null);    // { message, onConfirm }
+  const [modal, setModal]         = useState(null);
+  const [confirm, setConfirm]     = useState(null);
   const [loading, setLoading]     = useState(true);
   const [toasts, setToasts]       = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Tỷ giá USD — lưu localStorage
   const [usdRate, setUsdRate] = useState(() => {
     const saved = localStorage.getItem("usdRate");
     return saved ? Number(saved) : DEFAULT_USD_RATE;
@@ -123,26 +151,37 @@ export default function App() {
   const [rateDraft, setRateDraft]     = useState(String(usdRate));
   const rateRef = useRef(null);
 
-  // Tháng lọc
   const now = new Date();
   const [filterMonth, setFilterMonth] = useState(
     `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`
   );
 
-  // Search & sort
   const [chiSearch,  setChiSearch]  = useState("");
   const [nhanSearch, setNhanSearch] = useState("");
   const [chiSort,    setChiSort]    = useState({ col: "date", asc: false });
   const [nhanSort,   setNhanSort]   = useState({ col: "date", asc: false });
   const [showCancelled, setShowCancelled] = useState(true);
 
-  // Dropdown export
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
 
-  // ── Auth ──
+  // ── Auth — also registers user in registeredUsers on login ──
   useEffect(() => {
-    return onAuthStateChanged(auth, u => { setUser(u); setAuthLoading(false); });
+    return onAuthStateChanged(auth, async u => {
+      setUser(u);
+      setAuthLoading(false);
+      if (u) {
+        try {
+          await setDoc(doc(db, "registeredUsers", u.uid), {
+            email: u.email,
+            displayName: u.displayName || "",
+            lastSeen: serverTimestamp(),
+          }, { merge: true });
+        } catch {
+          // Silent — rules may not be set up yet; non-blocking
+        }
+      }
+    });
   }, []);
 
   // ── Firestore ──
@@ -191,9 +230,8 @@ export default function App() {
   const filteredChi  = useMemo(() => chiRows.filter(inMonth),  [chiRows, inMonth]);
   const filteredNhan = useMemo(() => nhanRows.filter(inMonth), [nhanRows, inMonth]);
 
-  // Exclude cancelled from totals (hoàn tiền = không tính vào chi)
-  const activeChi = useMemo(() => filteredChi.filter(r => !r.cancelled), [filteredChi]);
-  const cancelledChi = useMemo(() => filteredChi.filter(r => r.cancelled), [filteredChi]);
+  const activeChi    = useMemo(() => filteredChi.filter(r => !r.cancelled), [filteredChi]);
+  const cancelledChi = useMemo(() => filteredChi.filter(r => r.cancelled),  [filteredChi]);
 
   const totalChiVND  = useMemo(() => activeChi.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0), [activeChi]);
   const totalChiUSD  = useMemo(() => activeChi.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [activeChi]);
@@ -202,11 +240,11 @@ export default function App() {
   const conVND = totalNhanVND - totalChiVND;
   const conUSD = totalNhanUSD - totalChiUSD;
 
-  // staffStats: exclude cancelled
+  // staffStats: use normalizeName to fix Vietnamese capitalization
   const staffStats = useMemo(() => {
     const s = {};
     activeChi.forEach(r => {
-      const name = (r.nguoiMua||"Không rõ").trim().toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+      const name = normalizeName(r.nguoiMua);
       if (!s[name]) s[name] = { vnd:0, usd:0, accCount:0 };
       if (r.currency==="VND") s[name].vnd += r.soTien||0; else s[name].usd += r.soTien||0;
       s[name].accCount++;
@@ -217,33 +255,28 @@ export default function App() {
   const nhanStats = useMemo(() => {
     const s = {};
     filteredNhan.forEach(r => {
-      const name = (r.nguoiChuyen||"Không rõ").trim().toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+      const name = normalizeName(r.nguoiChuyen);
       if (!s[name]) s[name] = { vnd:0, usd:0 };
       if (r.currency==="VND") s[name].vnd += r.soTien||0; else s[name].usd += r.soTien||0;
     });
     return s;
   }, [filteredNhan]);
 
-  // 6-month chart (active chi only)
-  const chartData = useMemo(() => {
-    const months = {};
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i);
-      const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-      months[ym] = { month:`T${d.getMonth()+1}/${String(d.getFullYear()).slice(2)}`, chi:0, nhan:0 };
-    }
-    chiRows.filter(r=>!r.cancelled).forEach(r => {
-      const d = getRowDate(r);
-      const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-      if (months[ym]) months[ym].chi += r.currency==="VND" ? r.soTien||0 : (r.soTien||0)*usdRate;
+  // Game ranking chart — all data (not month-filtered), top 10 by purchase count
+  const gameStats = useMemo(() => {
+    const stats = {};
+    chiRows.filter(r => !r.cancelled).forEach(r => {
+      const name = extractGame(r.account);
+      if (!stats[name]) stats[name] = { count: 0, vnd: 0, usd: 0 };
+      stats[name].count++;
+      if (r.currency === "VND") stats[name].vnd += r.soTien || 0;
+      else stats[name].usd += r.soTien || 0;
     });
-    nhanRows.forEach(r => {
-      const d = getRowDate(r);
-      const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-      if (months[ym]) months[ym].nhan += r.currency==="VND" ? r.soTien||0 : (r.soTien||0)*usdRate;
-    });
-    return Object.values(months);
-  }, [chiRows, nhanRows, usdRate]);
+    return Object.entries(stats)
+      .map(([name, s]) => ({ name, count: s.count, total: s.vnd + s.usd * usdRate }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [chiRows, usdRate]);
 
   // ── Search + Sort ──
   const applySearch = (rows, q, fields) =>
@@ -266,7 +299,7 @@ export default function App() {
     setSort(prev => prev.col===col ? { col, asc:!prev.asc } : { col, asc:true });
 
   const chiBase    = showCancelled ? filteredChi : activeChi;
-  const displayChi  = applySort(applySearch(chiBase,   chiSearch,  ["account","nguoiMua","ghiChu"]), chiSort);
+  const displayChi  = applySort(applySearch(chiBase,     chiSearch,  ["account","nguoiMua","ghiChu"]), chiSort);
   const displayNhan = applySort(applySearch(filteredNhan, nhanSearch, ["nguoiChuyen","ghiChu"]), nhanSort);
 
   // ── CRUD ──
@@ -299,21 +332,14 @@ export default function App() {
   };
 
   // ── Export handlers ──
-  const handleExportJSON = () => {
-    exportJSON(chiRows, nhanRows);
-    pushToast("Đã tải xuống file JSON");
-    setExportOpen(false);
-  };
-  const handleExportCSV = () => {
-    exportCSV(chiRows, nhanRows);
-    pushToast("Đã tải xuống file CSV (mở bằng Excel)");
-    setExportOpen(false);
-  };
+  const handleExportJSON = () => { exportJSON(chiRows, nhanRows); pushToast("Đã tải xuống file JSON"); setExportOpen(false); };
+  const handleExportCSV  = () => { exportCSV(chiRows, nhanRows);  pushToast("Đã tải xuống file CSV (mở bằng Excel)"); setExportOpen(false); };
 
   if (authLoading) return <div className="auth-loading"><div className="spinner"/>Đang tải...</div>;
   if (!user)       return <LoginScreen />;
 
-  const userInitial = (user.email||"U")[0].toUpperCase();
+  const isAdmin      = user.email === ADMIN_EMAIL;
+  const userInitial  = (user.email||"U")[0].toUpperCase();
 
   return (
     <div className="app">
@@ -335,6 +361,13 @@ export default function App() {
               {t.label}
             </button>
           ))}
+          {isAdmin && (
+            <button className={`nav-btn ${tab==="admin"?"active":""}`}
+              onClick={() => { setTab("admin"); setSidebarOpen(false); }}>
+              <span className="nav-icon"><Icon name="shield" size={16}/></span>
+              Admin
+            </button>
+          )}
         </nav>
 
         {/* USD Rate in sidebar */}
@@ -366,7 +399,7 @@ export default function App() {
             <div className="user-avatar">{userInitial}</div>
             <div className="user-details">
               <span className="user-email-text">{user.email}</span>
-              <span className="user-role">Admin</span>
+              <span className="user-role">{isAdmin ? "Admin" : "Thành viên"}</span>
             </div>
             <button className="btn-logout-icon" onClick={() => signOut(auth)} title="Đăng xuất">
               <Icon name="logout" size={14}/>
@@ -381,16 +414,19 @@ export default function App() {
           <button className="btn-hamburger" onClick={() => setSidebarOpen(o=>!o)}>
             <Icon name="menu" size={18}/>
           </button>
-          <h1 className="page-title">{PAGE_TITLES[tab]}</h1>
+          <h1 className="page-title">{PAGE_TITLES[tab] || tab}</h1>
           <div className="topbar-controls">
-            <div className="month-chip">
-              <Icon name="calendar" size={13}/>
-              <span className="month-chip-label">Tháng</span>
-              <input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="month-input"/>
-            </div>
-            <button className="btn-all" onClick={() => setFilterMonth("")}>Tất Cả</button>
+            {tab !== "admin" && (
+              <>
+                <div className="month-chip">
+                  <Icon name="calendar" size={13}/>
+                  <span className="month-chip-label">Tháng</span>
+                  <input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="month-input"/>
+                </div>
+                <button className="btn-all" onClick={() => setFilterMonth("")}>Tất Cả</button>
+              </>
+            )}
 
-            {/* Export dropdown */}
             <div className="export-wrap" ref={exportRef}>
               <button className="btn-export" onClick={() => setExportOpen(o=>!o)}>
                 <Icon name="download" size={13}/>
@@ -422,10 +458,10 @@ export default function App() {
         </header>
 
         <div className="content">
-          {loading && <div className="loading"><div className="spinner"/>Đang tải dữ liệu...</div>}
+          {loading && tab !== "admin" && <div className="loading"><div className="spinner"/>Đang tải dữ liệu...</div>}
 
-          {/* ── SUMMARY CARDS ── */}
-          {!loading && (
+          {/* ── SUMMARY CARDS (not on admin tab) ── */}
+          {!loading && tab !== "admin" && (
             <div className="summary-row">
               <div className="sum-card red">
                 <div className="sum-card-header">
@@ -462,30 +498,53 @@ export default function App() {
           {/* ── DASHBOARD ── */}
           {tab==="dashboard" && !loading && (
             <>
+              {/* Game ranking chart */}
               <div className="section">
                 <div className="section-header">
-                  <span className="section-title">Xu Hướng 6 Tháng Gần Nhất</span>
-                  <span className="chart-legend">
-                    <span className="legend-dot red"/>Chi&nbsp;&nbsp;
-                    <span className="legend-dot green"/>Nhập
-                  </span>
+                  <span className="section-title">Top Game Thu Mua</span>
+                  <span style={{fontSize:11,color:"var(--text-dim)"}}>Tất cả thời gian · {gameStats.length} game</span>
                 </div>
-                <div className="chart-wrap">
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={chartData} barGap={4} barCategoryGap="32%">
-                      <XAxis dataKey="month" tick={{fill:"#4e5880",fontSize:11,fontFamily:"IBM Plex Mono"}} axisLine={false} tickLine={false}/>
-                      <YAxis tickFormatter={fmtMillions} tick={{fill:"#4e5880",fontSize:10,fontFamily:"IBM Plex Mono"}} axisLine={false} tickLine={false} width={46}/>
-                      <Tooltip
-                        cursor={{fill:"rgba(255,255,255,0.04)"}}
-                        contentStyle={{background:"#13162a",border:"1px solid #252d4a",borderRadius:9,fontSize:12,fontFamily:"IBM Plex Mono",color:"#e8eaf6",padding:"10px 14px"}}
-                        formatter={(v,n) => [fmtVND(v), n==="chi"?"Chi":"Nhập"]}
-                        labelStyle={{color:"#8b96c0",marginBottom:4}}
-                      />
-                      <Bar dataKey="chi"  radius={[4,4,0,0]}>{chartData.map((_,i)=><Cell key={i} fill="rgba(255,77,109,0.75)"/>)}</Bar>
-                      <Bar dataKey="nhan" radius={[4,4,0,0]}>{chartData.map((_,i)=><Cell key={i} fill="rgba(5,216,144,0.75)"/>)}</Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                {gameStats.length === 0 ? <EmptyState text="Chưa có dữ liệu"/> : (
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={Math.max(200, gameStats.length * 46 + 30)}>
+                      <BarChart
+                        layout="vertical"
+                        data={gameStats}
+                        margin={{ left: 10, right: 54, top: 6, bottom: 6 }}
+                      >
+                        <XAxis
+                          type="number"
+                          tick={{ fill:"#4e5880", fontSize:11, fontFamily:"IBM Plex Mono" }}
+                          axisLine={false} tickLine={false}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          tick={{ fill:"#8b96c0", fontSize:12, fontFamily:"Be Vietnam Pro" }}
+                          axisLine={false} tickLine={false}
+                          width={86}
+                        />
+                        <Tooltip
+                          cursor={{ fill:"rgba(255,255,255,0.04)" }}
+                          contentStyle={{ background:"#13162a", border:"1px solid #252d4a", borderRadius:9, fontSize:12, fontFamily:"IBM Plex Mono", color:"#e8eaf6", padding:"8px 14px" }}
+                          formatter={(v, n, { payload }) => [
+                            `${v} lần  |  ${fmtVND(payload.total)}`,
+                            "Số lần mua"
+                          ]}
+                          labelStyle={{ color:"#8b96c0", marginBottom:4 }}
+                        />
+                        <Bar dataKey="count" radius={[0,4,4,0]} maxBarSize={28}>
+                          {gameStats.map((_, i) => <Cell key={i} fill={GAME_COLORS[i % GAME_COLORS.length]}/>)}
+                          <LabelList
+                            dataKey="count"
+                            position="right"
+                            style={{ fill:"#8b96c0", fontSize:11, fontFamily:"IBM Plex Mono", fontWeight:600 }}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
 
               <div className="section">
@@ -697,6 +756,11 @@ export default function App() {
               )}
             </div>
           )}
+
+          {/* ── ADMIN TAB ── */}
+          {tab==="admin" && isAdmin && (
+            <AdminPage usdRate={usdRate} />
+          )}
         </div>
       </div>
 
@@ -776,6 +840,233 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── ADMIN PAGE ────────────────────────────────────────────────────────────────
+const RULES_TEMPLATE = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{col}/{docId} {
+      allow read, write: if request.auth != null &&
+        (request.auth.uid == uid ||
+         request.auth.token.email == '${ADMIN_EMAIL}');
+    }
+    match /registeredUsers/{uid} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null &&
+        (request.auth.uid == uid ||
+         request.auth.token.email == '${ADMIN_EMAIL}');
+    }
+  }
+}`;
+
+function AdminPage({ usdRate }) {
+  const [userList,   setUserList]   = useState([]);
+  const [allChi,     setAllChi]     = useState({});
+  const [allNhan,    setAllNhan]    = useState({});
+  const [adminLoad,  setAdminLoad]  = useState(true);
+  const [adminError, setAdminError] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const regSnap = await getDocs(collection(db, "registeredUsers"));
+        const users   = regSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        setUserList(users);
+
+        const chiMap = {}, nhanMap = {};
+        await Promise.all(users.map(async u => {
+          try {
+            const [cs, ns] = await Promise.all([
+              getDocs(collection(db, `users/${u.uid}/chi`)),
+              getDocs(collection(db, `users/${u.uid}/nhan`)),
+            ]);
+            chiMap[u.uid]  = cs.docs.map(d => ({ id: d.id, ...d.data() }));
+            nhanMap[u.uid] = ns.docs.map(d => ({ id: d.id, ...d.data() }));
+          } catch {
+            chiMap[u.uid]  = [];
+            nhanMap[u.uid] = [];
+          }
+        }));
+        setAllChi(chiMap);
+        setAllNhan(nhanMap);
+      } catch (e) {
+        setAdminError(e.message);
+      } finally {
+        setAdminLoad(false);
+      }
+    };
+    load();
+  }, []);
+
+  const allChiFlat  = useMemo(() => Object.values(allChi).flat(),  [allChi]);
+  const allNhanFlat = useMemo(() => Object.values(allNhan).flat(), [allNhan]);
+  const activeFlat  = useMemo(() => allChiFlat.filter(r => !r.cancelled), [allChiFlat]);
+
+  const totChiVND  = useMemo(() => activeFlat.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0), [activeFlat]);
+  const totChiUSD  = useMemo(() => activeFlat.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [activeFlat]);
+  const totNhanVND = useMemo(() => allNhanFlat.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0), [allNhanFlat]);
+  const totNhanUSD = useMemo(() => allNhanFlat.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [allNhanFlat]);
+  const conVND = totNhanVND - totChiVND;
+  const conUSD = totNhanUSD - totChiUSD;
+
+  const topGames = useMemo(() => {
+    const stats = {};
+    activeFlat.forEach(r => {
+      const name = extractGame(r.account);
+      if (!stats[name]) stats[name] = 0;
+      stats[name]++;
+    });
+    return Object.entries(stats)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [activeFlat]);
+
+  if (adminLoad) return <div className="loading"><div className="spinner"/>Đang tải dữ liệu admin...</div>;
+
+  if (adminError) return (
+    <div className="section">
+      <div className="section-header"><span className="section-title">Lỗi Kết Nối Admin</span></div>
+      <div style={{padding:"20px 24px"}}>
+        <div className="login-error" style={{marginBottom:16}}>{adminError}</div>
+        <p style={{fontSize:13,color:"var(--text-mid)",marginBottom:12,lineHeight:1.7}}>
+          Firestore rules chưa cấp quyền admin. Vào
+          <b style={{color:"var(--blue)"}}> Firebase Console → Firestore Database → Rules </b>
+          và paste rules bên dưới, rồi bấm <b>Publish</b>:
+        </p>
+        <pre className="rules-box">{RULES_TEMPLATE}</pre>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Global summary */}
+      <div className="summary-row">
+        <div className="sum-card red">
+          <div className="sum-card-header">
+            <div className="sum-label">Tổng Chi · All Users</div>
+            <div className="sum-card-icon"><Icon name="arrow_down" size={17}/></div>
+          </div>
+          <div className="sum-value">{fmtVND(totChiVND)}</div>
+          <div className="sum-sub">USD: {fmtUSD(totChiUSD)}</div>
+        </div>
+        <div className="sum-card green">
+          <div className="sum-card-header">
+            <div className="sum-label">Tổng Nhập · All Users</div>
+            <div className="sum-card-icon"><Icon name="arrow_up" size={17}/></div>
+          </div>
+          <div className="sum-value">{fmtVND(totNhanVND)}</div>
+          <div className="sum-sub">USD: {fmtUSD(totNhanUSD)}</div>
+        </div>
+        <div className={`sum-card ${conVND>=0?"blue":"red"}`}>
+          <div className="sum-card-header">
+            <div className="sum-label">Còn Lại · Tổng</div>
+            <div className="sum-card-icon"><Icon name="wallet" size={17}/></div>
+          </div>
+          <div className="sum-value">{fmtVND(conVND)}</div>
+          <div className={`sum-sub ${conUSD>=0?"pos":"neg"}`}>USD: {fmtUSD(conUSD)}</div>
+        </div>
+      </div>
+
+      {/* Per-user breakdown */}
+      <div className="section">
+        <div className="section-header">
+          <span className="section-title">
+            Chi Tiết Từng User &nbsp;
+            <span className="badge purple">{userList.length} users</span>
+          </span>
+          <span style={{fontSize:11,color:"var(--text-dim)"}}>Tất cả thời gian</span>
+        </div>
+        {userList.length === 0 ? <EmptyState text="Chưa có user đăng ký (cần cập nhật Firestore rules)"/> : (
+          <div style={{overflowX:"auto"}}>
+            <table className="data-table">
+              <thead><tr>
+                <th>Email</th>
+                <th>Lần Cuối</th>
+                <th style={{textAlign:"right"}}>Giao Dịch</th>
+                <th style={{textAlign:"right"}}>Chi VND</th>
+                <th style={{textAlign:"right"}}>Chi USD</th>
+                <th style={{textAlign:"right"}}>Nhập VND</th>
+                <th style={{textAlign:"right"}}>Còn Lại</th>
+              </tr></thead>
+              <tbody>
+                {userList.map(u => {
+                  const chi  = allChi[u.uid]  || [];
+                  const nhan = allNhan[u.uid] || [];
+                  const act  = chi.filter(r=>!r.cancelled);
+                  const cVND = act.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+                  const cUSD = act.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+                  const nVND = nhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+                  const nUSD = nhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+                  const bal  = (nVND - cVND) + (nUSD - cUSD) * usdRate;
+                  const seen = u.lastSeen?.toDate
+                    ? u.lastSeen.toDate().toLocaleDateString("vi-VN")
+                    : "—";
+                  return (
+                    <tr key={u.uid}>
+                      <td><span className="badge blue">{u.email}</span></td>
+                      <td className="date-cell">{seen}</td>
+                      <td className="num">{chi.length}</td>
+                      <td className="num red-text">{fmtVND(cVND)}</td>
+                      <td className="num yellow-text">{fmtUSD(cUSD)}</td>
+                      <td className="num green-text">{fmtVND(nVND)}</td>
+                      <td className={`num ${bal>=0?"green-text":"red-text"}`}>{fmtVND(bal)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Top games across all users */}
+      {topGames.length > 0 && (
+        <div className="section">
+          <div className="section-header">
+            <span className="section-title">Top Game Toàn Hệ Thống</span>
+            <span style={{fontSize:11,color:"var(--text-dim)"}}>{activeFlat.length} giao dịch · {topGames.length} game</span>
+          </div>
+          <div className="chart-wrap">
+            <ResponsiveContainer width="100%" height={Math.max(200, topGames.length * 46 + 30)}>
+              <BarChart layout="vertical" data={topGames} margin={{left:10, right:54, top:6, bottom:6}}>
+                <XAxis type="number" tick={{fill:"#4e5880",fontSize:11,fontFamily:"IBM Plex Mono"}} axisLine={false} tickLine={false}/>
+                <YAxis type="category" dataKey="name" tick={{fill:"#8b96c0",fontSize:12,fontFamily:"Be Vietnam Pro"}} axisLine={false} tickLine={false} width={86}/>
+                <Tooltip
+                  cursor={{fill:"rgba(255,255,255,0.04)"}}
+                  contentStyle={{background:"#13162a",border:"1px solid #252d4a",borderRadius:9,fontSize:12,color:"#e8eaf6",padding:"8px 14px"}}
+                  formatter={(v) => [v + " lần", "Số lần mua"]}
+                  labelStyle={{color:"#8b96c0",marginBottom:4}}
+                />
+                <Bar dataKey="count" radius={[0,4,4,0]} maxBarSize={28}>
+                  {topGames.map((_, i) => <Cell key={i} fill={GAME_COLORS[i % GAME_COLORS.length]}/>)}
+                  <LabelList dataKey="count" position="right" style={{fill:"#8b96c0",fontSize:11,fontFamily:"IBM Plex Mono",fontWeight:600}}/>
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Firestore rules setup */}
+      <div className="section">
+        <div className="section-header">
+          <span className="section-title">Cấu Hình Firestore Rules</span>
+          <span className="badge green">Hướng Dẫn</span>
+        </div>
+        <div style={{padding:"16px 24px 24px"}}>
+          <p style={{fontSize:13,color:"var(--text-mid)",marginBottom:14,lineHeight:1.8}}>
+            Để Admin có thể đọc dữ liệu tất cả user, vào
+            <b style={{color:"var(--blue)"}}> Firebase Console → Firestore Database → Rules</b>,
+            paste đoạn sau rồi bấm <b style={{color:"var(--green)"}}>Publish</b>:
+          </p>
+          <pre className="rules-box">{RULES_TEMPLATE}</pre>
+        </div>
+      </div>
+    </>
   );
 }
 
