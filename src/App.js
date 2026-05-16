@@ -838,28 +838,6 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
 }
 
 // ── ADMIN PAGE ────────────────────────────────────────────────────────────────
-const RULES_TEMPLATE = `rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{uid}/{col}/{docId} {
-      allow read, write: if request.auth != null &&
-        (request.auth.uid == uid ||
-         request.auth.token.email == '${ADMIN_EMAIL}');
-    }
-    match /registeredUsers/{uid} {
-      allow write: if request.auth != null && request.auth.uid == uid;
-      allow read: if request.auth != null &&
-        (request.auth.uid == uid ||
-         request.auth.token.email == '${ADMIN_EMAIL}');
-    }
-    // Shared settings (usdRate) — all users read, only admin writes
-    match /settings/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        request.auth.token.email == '${ADMIN_EMAIL}';
-    }
-  }
-}`;
 
 function AdminPage({ usdRate }) {
   const [userList,   setUserList]   = useState([]);
@@ -940,13 +918,7 @@ function AdminPage({ usdRate }) {
     <div className="section">
       <div className="section-header"><span className="section-title">Lỗi Kết Nối Admin</span></div>
       <div style={{padding:"20px 24px"}}>
-        <div className="login-error" style={{marginBottom:16}}>{adminError}</div>
-        <p style={{fontSize:13,color:"var(--text-mid)",marginBottom:12,lineHeight:1.7}}>
-          Firestore rules chưa cấp quyền admin. Vào
-          <b style={{color:"var(--blue)"}}> Firebase Console → Firestore Database → Rules </b>
-          và paste rules bên dưới, rồi bấm <b>Publish</b>:
-        </p>
-        <pre className="rules-box">{RULES_TEMPLATE}</pre>
+        <div className="login-error">{adminError}</div>
       </div>
     </div>
   );
@@ -1061,21 +1033,6 @@ function AdminPage({ usdRate }) {
         </div>
       )}
 
-      {/* Firestore rules setup */}
-      <div className="section">
-        <div className="section-header">
-          <span className="section-title">Cấu Hình Firestore Rules</span>
-          <span className="badge green">Hướng Dẫn</span>
-        </div>
-        <div style={{padding:"16px 24px 24px"}}>
-          <p style={{fontSize:13,color:"var(--text-mid)",marginBottom:14,lineHeight:1.8}}>
-            Để Admin có thể đọc dữ liệu tất cả user, vào
-            <b style={{color:"var(--blue)"}}> Firebase Console → Firestore Database → Rules</b>,
-            paste đoạn sau rồi bấm <b style={{color:"var(--green)"}}>Publish</b>:
-          </p>
-          <pre className="rules-box">{RULES_TEMPLATE}</pre>
-        </div>
-      </div>
     </>
   );
 }
