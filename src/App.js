@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
-  collection, collectionGroup, addDoc, onSnapshot, query, orderBy,
+  collection, addDoc, onSnapshot, query, orderBy,
   deleteDoc, doc, updateDoc, serverTimestamp, setDoc, getDocs
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
@@ -851,55 +851,37 @@ function AdminPage({ usdRate }) {
   useEffect(() => {
     const load = async () => {
       try {
-        // Collection group queries — fetch ALL chi/nhan docs across every user
-        const [chiSnap, nhanSnap] = await Promise.all([
-          getDocs(collectionGroup(db, "chi")),
-          getDocs(collectionGroup(db, "nhan")),
-        ]);
+        // Step 1: get all user profiles from users/{uid}
+        const uSnap = await getDocs(collection(db, "users"));
+        const profiles = [];
+        uSnap.forEach(d => profiles.push({ uid: d.id, ...d.data() }));
 
-        // Group by UID extracted from path: users/{uid}/chi/{docId}
-        // Skip root-level chi/nhan docs (old schema) where parent.parent is null
+        // Also check registeredUsers for any missed profiles
+        try {
+          const rSnap = await getDocs(collection(db, "registeredUsers"));
+          const seen = new Set(profiles.map(p => p.uid));
+          rSnap.forEach(d => { if (!seen.has(d.id)) profiles.push({ uid: d.id, ...d.data() }); });
+        } catch {}
+
+        // Step 2: for each user, fetch their chi and nhan subcollections
         const chiMap = {}, nhanMap = {};
-        chiSnap.forEach(d => {
-          const userDoc = d.ref.parent.parent;
-          if (!userDoc) return;
-          const uid = userDoc.id;
-          if (!chiMap[uid]) chiMap[uid] = [];
-          chiMap[uid].push({ id: d.id, ...d.data() });
-        });
-        nhanSnap.forEach(d => {
-          const userDoc = d.ref.parent.parent;
-          if (!userDoc) return;
-          const uid = userDoc.id;
-          if (!nhanMap[uid]) nhanMap[uid] = [];
-          nhanMap[uid].push({ id: d.id, ...d.data() });
-        });
+        await Promise.all(profiles.map(async ({ uid }) => {
+          try {
+            const [cSnap, nSnap] = await Promise.all([
+              getDocs(collection(db, `users/${uid}/chi`)),
+              getDocs(collection(db, `users/${uid}/nhan`)),
+            ]);
+            if (!cSnap.empty) chiMap[uid]  = cSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            if (!nSnap.empty) nhanMap[uid] = nSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          } catch {}
+        }));
 
         setAllChi(chiMap);
         setAllNhan(nhanMap);
-
-        // Build user list from all UIDs that have data
-        const allUids = [...new Set([...Object.keys(chiMap), ...Object.keys(nhanMap)])];
-
-        // Try to get emails from users/{uid} docs or registeredUsers
-        const emailMap = {};
-        const lastSeenMap = {};
-        try {
-          const uSnap = await getDocs(collection(db, "users"));
-          uSnap.forEach(d => { emailMap[d.id] = d.data().email; lastSeenMap[d.id] = d.data().lastSeen; });
-        } catch {}
-        try {
-          const rSnap = await getDocs(collection(db, "registeredUsers"));
-          rSnap.forEach(d => {
-            if (!emailMap[d.id]) emailMap[d.id] = d.data().email;
-            if (!lastSeenMap[d.id]) lastSeenMap[d.id] = d.data().lastSeen;
-          });
-        } catch {}
-
-        setUserList(allUids.map(uid => ({
-          uid,
-          email:    emailMap[uid]    || uid,
-          lastSeen: lastSeenMap[uid] || null,
+        setUserList(profiles.map(p => ({
+          uid:      p.uid,
+          email:    p.email    || p.uid,
+          lastSeen: p.lastSeen || null,
         })));
       } catch (e) {
         setAdminError(e.message);
