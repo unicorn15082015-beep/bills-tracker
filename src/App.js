@@ -855,15 +855,20 @@ function AdminPage({ usdRate }) {
           getDocs(collectionGroup(db, "nhan")),
         ]);
 
-        // Group by UID extracted from document path: users/{uid}/chi/{docId}
+        // Group by UID extracted from path: users/{uid}/chi/{docId}
+        // Skip root-level chi/nhan docs (old schema) where parent.parent is null
         const chiMap = {}, nhanMap = {};
         chiSnap.forEach(d => {
-          const uid = d.ref.parent.parent.id;
+          const userDoc = d.ref.parent.parent;
+          if (!userDoc) return;
+          const uid = userDoc.id;
           if (!chiMap[uid]) chiMap[uid] = [];
           chiMap[uid].push({ id: d.id, ...d.data() });
         });
         nhanSnap.forEach(d => {
-          const uid = d.ref.parent.parent.id;
+          const userDoc = d.ref.parent.parent;
+          if (!userDoc) return;
+          const uid = userDoc.id;
           if (!nhanMap[uid]) nhanMap[uid] = [];
           nhanMap[uid].push({ id: d.id, ...d.data() });
         });
