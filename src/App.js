@@ -177,7 +177,7 @@ export default function App() {
     });
   }, []);
 
-  // ── Firestore ──
+  // ── Firestore — user data + shared settings ──
   useEffect(() => {
     if (!user) return;
     const uid = user.uid;
@@ -185,7 +185,15 @@ export default function App() {
     const qNhan = query(collection(db, `users/${uid}/nhan`), orderBy("createdAt","desc"));
     const u1 = onSnapshot(qChi,  s => { setChiRows(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); });
     const u2 = onSnapshot(qNhan, s => setNhanRows(s.docs.map(d=>({id:d.id,...d.data()}))));
-    return () => { u1(); u2(); };
+    // Subscribe to admin-set USD rate (shared across all users)
+    const u3 = onSnapshot(doc(db, "settings", "rates"), snap => {
+      if (snap.exists() && snap.data().usdRate) {
+        const rate = snap.data().usdRate;
+        setUsdRate(rate);
+        localStorage.setItem("usdRate", String(rate));
+      }
+    }, () => {}); // silent on permission error
+    return () => { u1(); u2(); u3(); };
   }, [user]);
 
   // ── Close export dropdown on outside click ──
@@ -202,13 +210,18 @@ export default function App() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
   }, []);
 
-  // ── USD Rate save ──
-  const commitRate = () => {
+  // ── USD Rate save (admin only — writes to Firestore so all users get updated) ──
+  const commitRate = async () => {
     const n = parseInt(rateDraft.replace(/\D/g, ""), 10);
     if (n > 0) {
       setUsdRate(n);
       localStorage.setItem("usdRate", String(n));
-      pushToast(`Đã cập nhật tỷ giá: 1 USD = ${fmtNum(n)} đ`);
+      try {
+        await setDoc(doc(db, "settings", "rates"), { usdRate: n }, { merge: true });
+        pushToast(`Đã cập nhật tỷ giá cho tất cả: 1 USD = ${fmtNum(n)} đ`);
+      } catch {
+        pushToast(`Đã cập nhật tỷ giá: 1 USD = ${fmtNum(n)} đ`);
+      }
     }
     setRateEditing(false);
   };
@@ -233,14 +246,14 @@ export default function App() {
   const conVND = totalNhanVND - totalChiVND;
   const conUSD = totalNhanUSD - totalChiUSD;
 
-  // staffStats: use normalizeName to fix Vietnamese capitalization
+  // staffStats: count VND and USD accounts separately then sum
   const staffStats = useMemo(() => {
     const s = {};
     activeChi.forEach(r => {
       const name = normalizeName(r.nguoiMua);
-      if (!s[name]) s[name] = { vnd:0, usd:0, accCount:0 };
-      if (r.currency==="VND") s[name].vnd += r.soTien||0; else s[name].usd += r.soTien||0;
-      s[name].accCount++;
+      if (!s[name]) s[name] = { vnd:0, usd:0, vndCount:0, usdCount:0 };
+      if (r.currency==="VND") { s[name].vnd += r.soTien||0; s[name].vndCount++; }
+      else                    { s[name].usd += r.soTien||0; s[name].usdCount++; }
     });
     return s;
   }, [activeChi]);
@@ -363,29 +376,31 @@ export default function App() {
           )}
         </nav>
 
-        {/* USD Rate in sidebar */}
-        <div className="sidebar-rate">
-          <div className="rate-label"><Icon name="exchange" size={12}/> Tỷ Giá USD</div>
-          {rateEditing ? (
-            <div className="rate-edit-row">
-              <input
-                ref={rateRef}
-                className="rate-input"
-                value={rateDraft}
-                onChange={e => setRateDraft(e.target.value)}
-                onKeyDown={e => { if(e.key==="Enter") commitRate(); if(e.key==="Escape") setRateEditing(false); }}
-                onBlur={commitRate}
-                autoFocus
-              />
-              <span className="rate-suffix">đ</span>
-            </div>
-          ) : (
-            <button className="rate-display" onClick={() => { setRateDraft(String(usdRate)); setRateEditing(true); }}>
-              <span className="rate-value">{fmtNum(usdRate)} đ</span>
-              <span className="rate-edit-hint">click để sửa</span>
-            </button>
-          )}
-        </div>
+        {/* USD Rate — admin only */}
+        {isAdmin && (
+          <div className="sidebar-rate">
+            <div className="rate-label"><Icon name="exchange" size={12}/> Tỷ Giá USD <span style={{color:"var(--yellow)",fontSize:9,marginLeft:4}}>ADMIN</span></div>
+            {rateEditing ? (
+              <div className="rate-edit-row">
+                <input
+                  ref={rateRef}
+                  className="rate-input"
+                  value={rateDraft}
+                  onChange={e => setRateDraft(e.target.value)}
+                  onKeyDown={e => { if(e.key==="Enter") commitRate(); if(e.key==="Escape") setRateEditing(false); }}
+                  onBlur={commitRate}
+                  autoFocus
+                />
+                <span className="rate-suffix">đ</span>
+              </div>
+            ) : (
+              <button className="rate-display" onClick={() => { setRateDraft(String(usdRate)); setRateEditing(true); }}>
+                <span className="rate-value">{fmtNum(usdRate)} đ</span>
+                <span className="rate-edit-hint">click để sửa</span>
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="sidebar-footer">
           <div className="user-info">
@@ -542,7 +557,7 @@ export default function App() {
                       {Object.entries(staffStats).sort((a,b)=>(b[1].vnd+b[1].usd*usdRate)-(a[1].vnd+a[1].usd*usdRate)).map(([name,s]) => (
                         <tr key={name}>
                           <td><span className="badge blue">{name}</span></td>
-                          <td><span className="badge purple">{s.accCount} acc</span></td>
+                          <td><span className="badge purple">{s.vndCount + s.usdCount} acc</span></td>
                           <td className="num red-text">{fmtVND(s.vnd)}</td>
                           <td className="num yellow-text">{fmtUSD(s.usd)}</td>
                           <td className="num red-text">{fmtVND(s.vnd+s.usd*usdRate)}</td>
@@ -716,7 +731,15 @@ export default function App() {
                         <div><div className="staff-name">{name}</div><div className="staff-role">Thu Mua</div></div>
                       </div>
                       <div className="staff-rows">
-                        <div className="staff-row"><span>Số Acc</span><span className="num">{s.accCount}</span></div>
+                        <div className="staff-row">
+                          <span>Số Acc</span>
+                          <span className="num">
+                            {s.vndCount + s.usdCount}
+                            <span style={{fontSize:10,color:"var(--text-dim)",marginLeft:4}}>
+                              ({s.vndCount} VND + {s.usdCount} USD)
+                            </span>
+                          </span>
+                        </div>
                         <div className="staff-row"><span>Chi VND</span><span className="num red-text">{fmtVND(s.vnd)}</span></div>
                         <div className="staff-row"><span>Chi USD</span><span className="num yellow-text">{fmtUSD(s.usd)}</span></div>
                         <div className="staff-row total"><span>Tổng Quy Đổi</span><span className="num red-text">{fmtVND(s.vnd+s.usd*usdRate)}</span></div>
@@ -828,6 +851,12 @@ service cloud.firestore {
       allow read: if request.auth != null &&
         (request.auth.uid == uid ||
          request.auth.token.email == '${ADMIN_EMAIL}');
+    }
+    // Shared settings (usdRate) — all users read, only admin writes
+    match /settings/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        request.auth.token.email == '${ADMIN_EMAIL}';
     }
   }
 }`;
