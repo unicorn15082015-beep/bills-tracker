@@ -48,13 +48,6 @@ const DEFAULT_USD_RATE = 25400;
 const fmtVND = (n) => new Intl.NumberFormat("vi-VN").format(Math.round(n || 0)) + " đ";
 const fmtUSD = (n) => "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n || 0);
 const fmtNum = (n) => new Intl.NumberFormat("vi-VN").format(n || 0);
-const fmtMillions = (n) => {
-  const a = Math.abs(n);
-  if (a >= 1e9) return (n / 1e9).toFixed(1) + "B";
-  if (a >= 1e6) return (n / 1e6).toFixed(1) + "M";
-  if (a >= 1e3) return (n / 1e3).toFixed(0) + "K";
-  return String(Math.round(n));
-};
 const fmtDate = (row) => {
   if (row?.ngay) return new Date(row.ngay + "T00:00:00").toLocaleDateString("vi-VN");
   if (!row?.createdAt) return "";
