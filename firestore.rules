@@ -1,19 +1,27 @@
-// firestore.rules
-// Deploy: firebase deploy --only firestore:rules
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Collection "chi" - giao dịch chi
-    match /chi/{docId} {
-      allow read, write: if true; // Tạm thời mở, sau đổi sang auth
-      // Khi có auth: allow read, write: if request.auth != null;
+    // Per-user data — owner or admin can read/write
+    match /users/{uid}/{col}/{docId} {
+      allow read, write: if request.auth != null &&
+        (request.auth.uid == uid ||
+         request.auth.token.email == 'lengocthang.mb@gmail.com');
     }
 
-    // Collection "nhan" - nhập quỹ
-    match /nhan/{docId} {
-      allow read, write: if true;
+    // Registered users — each user writes their own, admin reads all
+    match /registeredUsers/{uid} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null &&
+        (request.auth.uid == uid ||
+         request.auth.token.email == 'lengocthang.mb@gmail.com');
+    }
+
+    // Shared settings (usdRate) — all logged-in users read, only admin writes
+    match /settings/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        request.auth.token.email == 'lengocthang.mb@gmail.com';
     }
 
   }
