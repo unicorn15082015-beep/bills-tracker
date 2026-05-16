@@ -491,51 +491,29 @@ export default function App() {
           {/* ── DASHBOARD ── */}
           {tab==="dashboard" && !loading && (
             <>
-              {/* Game ranking chart */}
+              {/* Game ranking list */}
               <div className="section">
                 <div className="section-header">
                   <span className="section-title">Top Game Thu Mua</span>
                   <span style={{fontSize:11,color:"var(--text-dim)"}}>Tất cả thời gian · {gameStats.length} game</span>
                 </div>
                 {gameStats.length === 0 ? <EmptyState text="Chưa có dữ liệu"/> : (
-                  <div className="chart-wrap">
-                    <ResponsiveContainer width="100%" height={Math.max(200, gameStats.length * 46 + 30)}>
-                      <BarChart
-                        layout="vertical"
-                        data={gameStats}
-                        margin={{ left: 10, right: 54, top: 6, bottom: 6 }}
-                      >
-                        <XAxis
-                          type="number"
-                          tick={{ fill:"#4e5880", fontSize:11, fontFamily:"IBM Plex Mono" }}
-                          axisLine={false} tickLine={false}
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          tick={{ fill:"#8b96c0", fontSize:12, fontFamily:"Be Vietnam Pro" }}
-                          axisLine={false} tickLine={false}
-                          width={86}
-                        />
-                        <Tooltip
-                          cursor={{ fill:"rgba(255,255,255,0.04)" }}
-                          contentStyle={{ background:"#13162a", border:"1px solid #252d4a", borderRadius:9, fontSize:12, fontFamily:"IBM Plex Mono", color:"#e8eaf6", padding:"8px 14px" }}
-                          formatter={(v, n, { payload }) => [
-                            `${v} lần  |  ${fmtVND(payload.total)}`,
-                            "Số lần mua"
-                          ]}
-                          labelStyle={{ color:"#8b96c0", marginBottom:4 }}
-                        />
-                        <Bar dataKey="count" radius={[0,4,4,0]} maxBarSize={28}>
-                          {gameStats.map((_, i) => <Cell key={i} fill={GAME_COLORS[i % GAME_COLORS.length]}/>)}
-                          <LabelList
-                            dataKey="count"
-                            position="right"
-                            style={{ fill:"#8b96c0", fontSize:11, fontFamily:"IBM Plex Mono", fontWeight:600 }}
-                          />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="game-rank-list">
+                    {gameStats.map((g, i) => {
+                      const maxCount = gameStats[0].count;
+                      const pct = Math.round((g.count / maxCount) * 100);
+                      return (
+                        <div key={g.name} className="game-rank-item">
+                          <span className="game-rank-pos" style={{color: GAME_COLORS[i % GAME_COLORS.length]}}>#{i+1}</span>
+                          <span className="game-rank-name">{g.name}</span>
+                          <div className="game-rank-bar-wrap">
+                            <div className="game-rank-bar" style={{width:`${pct}%`, background: GAME_COLORS[i % GAME_COLORS.length]}}/>
+                          </div>
+                          <span className="game-rank-count">{g.count} lần</span>
+                          <span className="game-rank-total">{fmtVND(g.total)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
