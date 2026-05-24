@@ -549,6 +549,7 @@ body {
 .red-text    { color: var(--red); }
 .green-text  { color: var(--green); }
 .yellow-text { color: var(--yellow); }
+.proof-cell  { width: 70px; }
 .note-cell   { color: var(--text-mid); font-size: 12px; max-width: 160px; }
 .note-link-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 600; color: var(--blue); background: var(--blue-dim); border: 1px solid rgba(79,142,247,0.25); border-radius: 5px; padding: 1px 7px; text-decoration: none; margin-right: 4px; white-space: nowrap; }
 .note-link-badge:hover { opacity: 0.8; }
@@ -1515,24 +1516,46 @@ body {
   transition: all 0.15s;
 }
 .chi-filter-tab:hover { background: var(--bg3); }
-.chi-filter-tab.active {
-  background: var(--bg3);
-  border-bottom-color: var(--blue);
-}
+.chi-filter-tab.active { background: rgba(255,255,255,0.03); }
+
+/* default active: blue */
+.chi-filter-tab.active                { border-bottom-color: var(--blue); }
+.chi-filter-tab.active .cft-label    { color: var(--blue); }
+.chi-filter-tab.active .cft-sub      { color: var(--blue); opacity: 0.75; }
+
+/* per-tab color overrides */
+.tab-vnd.active  { border-bottom-color: var(--red);    }
+.tab-vnd.active  .cft-label { color: var(--red);    }
+.tab-vnd.active  .cft-sub   { color: var(--red);    opacity: 0.75; }
+
+.tab-usd.active  { border-bottom-color: var(--yellow); }
+.tab-usd.active  .cft-label { color: var(--yellow); }
+.tab-usd.active  .cft-sub   { color: var(--yellow); opacity: 0.75; }
+
+.tab-nhan.active { border-bottom-color: var(--green);  }
+.tab-nhan.active .cft-label { color: var(--green);  }
+.tab-nhan.active .cft-sub   { color: var(--green);  opacity: 0.75; }
+
+.tab-hoan.active { border-bottom-color: var(--red);    }
+.tab-hoan.active .cft-label { color: var(--red);    }
+.tab-hoan.active .cft-sub   { color: var(--red);    opacity: 0.75; }
+
+.tab-mid.active  { border-bottom-color: #fb923c;       }
+.tab-mid.active  .cft-label { color: #fb923c;       }
+.tab-mid.active  .cft-sub   { color: #fb923c;       opacity: 0.75; }
+
 .cft-label {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-mid);
   white-space: nowrap;
 }
-.chi-filter-tab.active .cft-label { color: var(--blue); }
 .cft-sub {
   font-size: 11px;
   color: var(--text-dim);
   white-space: nowrap;
   font-family: var(--mono);
 }
-.chi-filter-tab.active .cft-sub { color: var(--text-mid); }
 
 /* ══════════════════════════════════════════════
    SEARCH + TABLE TOOLBAR

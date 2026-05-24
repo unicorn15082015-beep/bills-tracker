@@ -667,16 +667,16 @@ export default function App() {
               {/* ── Filter tab bar ── */}
               <div className="chi-filter-bar">
                 {[
-                  { key:"all",  label:"Tất Cả",     sub: `${filteredChi.length} giao dịch` },
-                  { key:"vnd",  label:"Chi VND",     sub: fmtVND(totalChiVND) },
-                  { key:"usd",  label:"Chi USD",     sub: fmtUSD(totalChiUSD) },
-                  { key:"nhan", label:"Tổng Nhập",   sub: fmtVND(totalNhanVND) },
-                  { key:"hoan", label:"Hoàn Tiền",   sub: `${cancelledChi.length} giao dịch` },
-                  { key:"mid",  label:"Mid Hold",    sub: `${midHoldChi.length} giao dịch` },
+                  { key:"all",  label:"Tất Cả",   sub: `${filteredChi.length} giao dịch` },
+                  { key:"vnd",  label:"Chi VND",   sub: fmtVND(totalChiVND) },
+                  { key:"usd",  label:"Chi USD",   sub: fmtUSD(totalChiUSD) },
+                  { key:"nhan", label:"Tổng Nhập", sub: fmtVND(totalNhanVND) },
+                  { key:"hoan", label:"Hoàn Tiền", sub: `${cancelledChi.length} giao dịch` },
+                  { key:"mid",  label:"Mid Hold",  sub: `${midHoldChi.length} giao dịch` },
                 ].map(t => (
                   <button
                     key={t.key}
-                    className={`chi-filter-tab${chiFilter===t.key?" active":""}`}
+                    className={`chi-filter-tab tab-${t.key}${chiFilter===t.key?" active":""}`}
                     onClick={() => t.key==="nhan" ? setTab("nhan") : setChiFilter(t.key)}
                   >
                     <span className="cft-label">{t.label}</span>
@@ -700,6 +700,7 @@ export default function App() {
                     <th style={{textAlign:"right"}}>VND</th>
                     <th style={{textAlign:"right"}}>USD</th>
                     <SortTh label="Người Mua" col="nguoiMua" sort={chiSort} onSort={c=>toggleSort(setChiSort,c)}/>
+                    <th style={{width:80}}>Proof</th>
                     <th>Ghi Chú</th>
                     <th style={{width:90}}>Trạng Thái</th>
                     <th style={{width:72}}></th>
@@ -712,7 +713,17 @@ export default function App() {
                         <td className="num red-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
                         <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
                         <td><span className="badge blue">{r.nguoiMua}</span></td>
-                        <td className="note-cell">{renderNote(r.ghiChu)}</td>
+                        <td className="proof-cell">
+                          {/* show proof field, or fall back to URLs extracted from ghiChu */}
+                          {r.proof
+                            ? <a href={r.proof} target="_blank" rel="noopener noreferrer" className="note-link-badge">Link ↗</a>
+                            : renderNote(r.ghiChu)}
+                        </td>
+                        <td className="note-cell">
+                          {r.ghiChu && !r.proof
+                            ? <span className="note-text-part">{r.ghiChu.replace(/(https?:\/\/[^\s]+)/g,"").trim()}</span>
+                            : <span className="note-text-part">{r.ghiChu}</span>}
+                        </td>
                         <td className="status-cell">
                           {r.cancelled && <span className="badge red">Hoàn</span>}
                           {r.midHold   && <span className="badge orange">Mid</span>}
@@ -1159,6 +1170,7 @@ function Modal({ type, data, onClose, onSave }) {
     currency:    data?.currency    || "VND",
     nguoiMua:    data?.nguoiMua    || "",
     nguoiChuyen: data?.nguoiChuyen || "",
+    proof:       data?.proof        || "",
     ghiChu:      data?.ghiChu      || "",
     cancelled:   data?.cancelled   || false,
     midHold:     data?.midHold     || false,
@@ -1229,6 +1241,11 @@ function Modal({ type, data, onClose, onSave }) {
                   placeholder="vd: A2 Chuyển, Nhập..." className={errors.nguoiChuyen?"input-error":""}/>
               </Field>
           }
+          {isChi && (
+            <Field label="Proof (Link ảnh / URL)">
+              <input value={form.proof} onChange={e=>set("proof",e.target.value)} placeholder="https://..."/>
+            </Field>
+          )}
           <Field label="Ghi Chú">
             <input value={form.ghiChu} onChange={e=>set("ghiChu",e.target.value)} placeholder="Ghi chú thêm (tuỳ chọn)..."/>
           </Field>
