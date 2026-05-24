@@ -1518,41 +1518,39 @@ body {
 .chi-filter-tab:hover { background: var(--bg3); }
 .chi-filter-tab.active { background: rgba(255,255,255,0.03); }
 
-/* default active: blue */
-.chi-filter-tab.active                { border-bottom-color: var(--blue); }
-.chi-filter-tab.active .cft-label    { color: var(--blue); }
-.chi-filter-tab.active .cft-sub      { color: var(--blue); opacity: 0.75; }
+/* active state: show bottom border */
+.chi-filter-tab.active { border-bottom-color: currentColor; background: rgba(255,255,255,0.03); }
 
-/* per-tab color overrides */
-.tab-vnd.active  { border-bottom-color: var(--red);    }
-.tab-vnd.active  .cft-label { color: var(--red);    }
-.tab-vnd.active  .cft-sub   { color: var(--red);    opacity: 0.75; }
+/* always-on tab colors */
+.tab-all  .cft-label { color: var(--text); }
+.tab-all  .cft-sub   { color: var(--text-mid); }
+.tab-all.active       { border-bottom-color: var(--blue); }
+.tab-all.active .cft-label { color: var(--blue); }
+.tab-all.active .cft-sub   { color: var(--blue); opacity: 0.75; }
 
-.tab-usd.active  { border-bottom-color: var(--yellow); }
-.tab-usd.active  .cft-label { color: var(--yellow); }
-.tab-usd.active  .cft-sub   { color: var(--yellow); opacity: 0.75; }
+.tab-vnd  .cft-label { color: var(--red); }
+.tab-vnd  .cft-sub   { color: var(--red); opacity: 0.6; }
+.tab-vnd.active      { border-bottom-color: var(--red); }
 
-.tab-nhan.active { border-bottom-color: var(--green);  }
-.tab-nhan.active .cft-label { color: var(--green);  }
-.tab-nhan.active .cft-sub   { color: var(--green);  opacity: 0.75; }
+.tab-usd  .cft-label { color: var(--yellow); }
+.tab-usd  .cft-sub   { color: var(--yellow); opacity: 0.6; }
+.tab-usd.active      { border-bottom-color: var(--yellow); }
 
-.tab-hoan.active { border-bottom-color: var(--red);    }
-.tab-hoan.active .cft-label { color: var(--red);    }
-.tab-hoan.active .cft-sub   { color: var(--red);    opacity: 0.75; }
+.tab-hoan .cft-label { color: #f87171; }
+.tab-hoan .cft-sub   { color: #f87171; opacity: 0.6; }
+.tab-hoan.active     { border-bottom-color: #f87171; }
 
-.tab-mid.active  { border-bottom-color: #fb923c;       }
-.tab-mid.active  .cft-label { color: #fb923c;       }
-.tab-mid.active  .cft-sub   { color: #fb923c;       opacity: 0.75; }
+.tab-mid  .cft-label { color: #fb923c; }
+.tab-mid  .cft-sub   { color: #fb923c; opacity: 0.6; }
+.tab-mid.active      { border-bottom-color: #fb923c; }
 
 .cft-label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-mid);
   white-space: nowrap;
 }
 .cft-sub {
   font-size: 11px;
-  color: var(--text-dim);
   white-space: nowrap;
   font-family: var(--mono);
 }

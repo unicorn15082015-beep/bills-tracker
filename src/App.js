@@ -670,7 +670,6 @@ export default function App() {
                   { key:"all",  label:"Tất Cả",   sub: `${filteredChi.length} giao dịch` },
                   { key:"vnd",  label:"Chi VND",   sub: fmtVND(totalChiVND) },
                   { key:"usd",  label:"Chi USD",   sub: fmtUSD(totalChiUSD) },
-                  { key:"nhan", label:"Tổng Nhập", sub: fmtVND(totalNhanVND) },
                   { key:"hoan", label:"Hoàn Tiền", sub: `${cancelledChi.length} giao dịch` },
                   { key:"mid",  label:"Mid Hold",  sub: `${midHoldChi.length} giao dịch` },
                 ].map(t => (
