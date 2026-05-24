@@ -75,6 +75,17 @@ const extractGame = (account) => {
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 };
 
+// Render note: replace URLs with a small "Link ↗" badge, show remaining text
+const renderNote = (note) => {
+  if (!note) return null;
+  const parts = note.split(/(https?:\/\/[^\s]+)/g);
+  return parts.map((p, i) =>
+    /^https?:\/\//i.test(p)
+      ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" className="note-link-badge">Link ↗</a>
+      : (p.trim() ? <span key={i} className="note-text-part">{p.trim()}</span> : null)
+  );
+};
+
 // ── EXPORT HELPERS ────────────────────────────────────────────────────────────
 const downloadFile = (content, filename, mime) => {
   const blob = new Blob([content], { type: mime });
@@ -663,20 +674,22 @@ export default function App() {
                     <th style={{textAlign:"right"}}>USD</th>
                     <SortTh label="Người Mua" col="nguoiMua" sort={chiSort} onSort={c=>toggleSort(setChiSort,c)}/>
                     <th>Ghi Chú</th>
+                    <th style={{width:90}}>Trạng Thái</th>
                     <th style={{width:72}}></th>
                   </tr></thead>
                   <tbody>
                     {displayChi.map(r => (
                       <tr key={r.id} className={r.cancelled?"cancelled":""}>
                         <td className="date-cell">{fmtDate(r)}</td>
-                        <td>
-                          <span className="acc-name">{r.account}</span>
-                          {r.cancelled && <span className="badge red" style={{marginLeft:6,fontSize:10}}>Hoàn</span>}
-                        </td>
+                        <td><span className="acc-name">{r.account}</span></td>
                         <td className="num red-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
                         <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
                         <td><span className="badge blue">{r.nguoiMua}</span></td>
-                        <td className="note-cell" title={r.ghiChu}>{r.ghiChu}</td>
+                        <td className="note-cell">{renderNote(r.ghiChu)}</td>
+                        <td className="status-cell">
+                          {r.cancelled && <span className="badge red">Hoàn</span>}
+                          {r.midHold   && <span className="badge orange">Mid</span>}
+                        </td>
                         <td className="actions">
                           <button className="icon-btn" onClick={()=>setModal({type:"chi",data:r})}><Icon name="edit" size={13}/></button>
                           <button className="icon-btn danger" onClick={()=>deleteRecord("chi",r.id)}><Icon name="trash" size={13}/></button>
@@ -1121,6 +1134,7 @@ function Modal({ type, data, onClose, onSave }) {
     nguoiChuyen: data?.nguoiChuyen || "",
     ghiChu:      data?.ghiChu      || "",
     cancelled:   data?.cancelled   || false,
+    midHold:     data?.midHold     || false,
     ngay:        existingDate,
   });
   const [errors, setErrors] = useState({});
@@ -1192,10 +1206,16 @@ function Modal({ type, data, onClose, onSave }) {
             <input value={form.ghiChu} onChange={e=>set("ghiChu",e.target.value)} placeholder="Ghi chú thêm (tuỳ chọn)..."/>
           </Field>
           {isChi && (
-            <label className="checkbox-label">
-              <input type="checkbox" checked={form.cancelled} onChange={e=>set("cancelled",e.target.checked)}/>
-              Đánh dấu Cancel / Hoàn Tiền
-            </label>
+            <div className="checkbox-group">
+              <label className="checkbox-label">
+                <input type="checkbox" checked={form.cancelled} onChange={e=>set("cancelled",e.target.checked)}/>
+                Đánh dấu Cancel / Hoàn Tiền
+              </label>
+              <label className="checkbox-label mid">
+                <input type="checkbox" checked={form.midHold} onChange={e=>set("midHold",e.target.checked)}/>
+                Mid giữ tiền
+              </label>
+            </div>
           )}
         </div>
         <div className="modal-footer">
