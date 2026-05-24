@@ -165,6 +165,7 @@ export default function App() {
   const [chiSort,    setChiSort]    = useState({ col: "date", asc: false });
   const [nhanSort,   setNhanSort]   = useState({ col: "date", asc: false });
   const [showCancelled, setShowCancelled] = useState(true);
+  const [chiFilter, setChiFilter]         = useState("all");
 
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
@@ -278,8 +279,9 @@ export default function App() {
   const filteredChi  = useMemo(() => chiRows.filter(inMonth),  [chiRows, inMonth]);
   const filteredNhan = useMemo(() => nhanRows.filter(inMonth), [nhanRows, inMonth]);
 
-  const activeChi    = useMemo(() => filteredChi.filter(r => !r.cancelled), [filteredChi]);
-  const cancelledChi = useMemo(() => filteredChi.filter(r => r.cancelled),  [filteredChi]);
+  const activeChi    = useMemo(() => filteredChi.filter(r => !r.cancelled),         [filteredChi]);
+  const cancelledChi = useMemo(() => filteredChi.filter(r => r.cancelled),           [filteredChi]);
+  const midHoldChi   = useMemo(() => filteredChi.filter(r => r.midHold && !r.cancelled), [filteredChi]);
 
   const totalChiVND  = useMemo(() => activeChi.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0), [activeChi]);
   const totalChiUSD  = useMemo(() => activeChi.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [activeChi]);
@@ -346,7 +348,11 @@ export default function App() {
   const toggleSort = (setSort, col) =>
     setSort(prev => prev.col===col ? { col, asc:!prev.asc } : { col, asc:true });
 
-  const chiBase    = showCancelled ? filteredChi : activeChi;
+  const chiBase = chiFilter === "vnd"  ? activeChi.filter(r => r.currency === "VND")
+               : chiFilter === "usd"  ? activeChi.filter(r => r.currency === "USD")
+               : chiFilter === "hoan" ? cancelledChi
+               : chiFilter === "mid"  ? midHoldChi
+               : showCancelled ? filteredChi : activeChi;
   const displayChi  = applySort(applySearch(chiBase,     chiSearch,  ["account","nguoiMua","ghiChu"]), chiSort);
   const displayNhan = applySort(applySearch(filteredNhan, nhanSearch, ["nguoiChuyen","ghiChu"]), nhanSort);
 
@@ -658,6 +664,27 @@ export default function App() {
                   </button>
                 </div>
               </div>
+              {/* ── Filter tab bar ── */}
+              <div className="chi-filter-bar">
+                {[
+                  { key:"all",  label:"Tất Cả",     sub: `${filteredChi.length} giao dịch` },
+                  { key:"vnd",  label:"Chi VND",     sub: fmtVND(totalChiVND) },
+                  { key:"usd",  label:"Chi USD",     sub: fmtUSD(totalChiUSD) },
+                  { key:"nhan", label:"Tổng Nhập",   sub: fmtVND(totalNhanVND) },
+                  { key:"hoan", label:"Hoàn Tiền",   sub: `${cancelledChi.length} giao dịch` },
+                  { key:"mid",  label:"Mid Hold",    sub: `${midHoldChi.length} giao dịch` },
+                ].map(t => (
+                  <button
+                    key={t.key}
+                    className={`chi-filter-tab${chiFilter===t.key?" active":""}`}
+                    onClick={() => t.key==="nhan" ? setTab("nhan") : setChiFilter(t.key)}
+                  >
+                    <span className="cft-label">{t.label}</span>
+                    <span className="cft-sub">{t.sub}</span>
+                  </button>
+                ))}
+              </div>
+
               <div className="table-toolbar">
                 <div className="search-box">
                   <Icon name="search" size={14}/>

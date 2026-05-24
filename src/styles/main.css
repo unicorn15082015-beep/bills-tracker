@@ -1490,6 +1490,51 @@ body {
 .legend-dot.green { background: rgba(5,216,144,0.75); }
 
 /* ══════════════════════════════════════════════
+   CHI FILTER BAR
+══════════════════════════════════════════════ */
+.chi-filter-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.chi-filter-bar::-webkit-scrollbar { display: none; }
+
+.chi-filter-tab {
+  flex: 1;
+  min-width: 110px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chi-filter-tab:hover { background: var(--bg3); }
+.chi-filter-tab.active {
+  background: var(--bg3);
+  border-bottom-color: var(--blue);
+}
+.cft-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-mid);
+  white-space: nowrap;
+}
+.chi-filter-tab.active .cft-label { color: var(--blue); }
+.cft-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+.chi-filter-tab.active .cft-sub { color: var(--text-mid); }
+
+/* ══════════════════════════════════════════════
    SEARCH + TABLE TOOLBAR
 ══════════════════════════════════════════════ */
 .table-toolbar {
