@@ -2209,6 +2209,22 @@ body {
 .share-user-info { display: flex; flex-direction: column; gap: 1px; }
 .share-user-name { font-size: 13px; font-weight: 600; color: var(--text); }
 .share-user-email { font-size: 11px; color: var(--text-dim); }
+.share-user-sent { border-color: rgba(5,216,144,0.25); background: rgba(5,216,144,0.05); cursor: default; }
+.share-revoke-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(248,113,113,0.4);
+  background: rgba(248,113,113,0.1);
+  color: #f87171;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.share-revoke-btn:hover:not(:disabled) { background: rgba(248,113,113,0.2); }
+.share-revoke-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* Note popup button */
 .note-popup-btn {

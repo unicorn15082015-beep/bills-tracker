@@ -1186,60 +1186,98 @@ function GameModal({ data, onClose, onSave }) {
 
 // ── SHARE GAME MODAL ─────────────────────────────────────────────────────────
 function ShareGameModal({ team, rows, onClose, onShare }) {
-  const [userList, setUserList] = useState([]);
-  const [selected, setSelected] = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const [userList,  setUserList]  = useState([]);
+  const [sharedSet, setSharedSet] = useState(new Set()); // uids that already have this team
+  const [selected,  setSelected]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [revoking,  setRevoking]  = useState(null); // uid being revoked
 
-  useEffect(() => {
-    const load = async () => {
-      const snap = await getDocs(collection(db, "users"));
-      const users = [];
-      snap.forEach(d => {
-        const data = d.data();
-        if (data.email && data.email !== ADMIN_EMAIL)
-          users.push({ uid: d.id, email: data.email, displayName: data.displayName || data.email });
-      });
-      setUserList(users);
-      setLoading(false);
-    };
-    load();
-  }, []);
+  const reload = async () => {
+    setLoading(true);
+    const snap = await getDocs(collection(db, "users"));
+    const users = [];
+    const already = new Set();
+    await Promise.all(snap.docs.map(async d => {
+      const data = d.data();
+      if (!data.email || data.email === ADMIN_EMAIL) return;
+      users.push({ uid: d.id, email: data.email, displayName: data.displayName || data.email });
+      // check if this user already has this team shared
+      try {
+        const shDoc = await getDocs(collection(db, `users/${d.id}/sharedGames`));
+        shDoc.forEach(sd => { if (sd.id === `team_${team}`) already.add(d.id); });
+      } catch {}
+    }));
+    setUserList(users);
+    setSharedSet(already);
+    setLoading(false);
+  };
+
+  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = uid => setSelected(s => s.includes(uid) ? s.filter(x=>x!==uid) : [...s, uid]);
 
+  const handleRevoke = async (uid) => {
+    setRevoking(uid);
+    try {
+      await deleteDoc(doc(db, `users/${uid}/sharedGames`, `team_${team}`));
+      await reload();
+    } catch {}
+    setRevoking(null);
+  };
+
+  const unsharedUsers = userList.filter(u => !sharedSet.has(u.uid));
+  const sharedUsers   = userList.filter(u =>  sharedSet.has(u.uid));
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
+      <div className="modal" style={{maxWidth:460}} onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <div>
             <div className="modal-title">Chia Sẻ — Team {team}</div>
-            <div className="modal-title-sub">{rows.length} game record · chọn user để gửi</div>
+            <div className="modal-title-sub">{rows.length} record · {sharedUsers.length} đã nhận · {unsharedUsers.length} chưa nhận</div>
           </div>
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={15}/></button>
         </div>
         <div className="modal-body">
           {loading ? <div style={{textAlign:"center",padding:"20px",color:"var(--text-dim)"}}>Đang tải...</div> : (
-            userList.length === 0
-              ? <div style={{textAlign:"center",padding:"20px",color:"var(--text-dim)"}}>Không có user nào</div>
-              : <div className="share-user-list">
-                  {userList.map(u=>(
-                    <label key={u.uid} className={`share-user-row${selected.includes(u.uid)?" checked":""}`}>
-                      <input type="checkbox" checked={selected.includes(u.uid)} onChange={()=>toggle(u.uid)}/>
-                      <div className="share-user-avatar">{(u.displayName||u.email)[0].toUpperCase()}</div>
-                      <div className="share-user-info">
-                        <span className="share-user-name">{u.displayName||u.email}</span>
-                        <span className="share-user-email">{u.email}</span>
-                      </div>
-                    </label>
-                  ))}
+            <div className="share-user-list">
+              {/* Already shared */}
+              {sharedUsers.map(u=>(
+                <div key={u.uid} className="share-user-row share-user-sent">
+                  <div className="share-user-avatar" style={{background:"var(--green)"}}>{(u.displayName||u.email)[0].toUpperCase()}</div>
+                  <div className="share-user-info">
+                    <span className="share-user-name">{u.displayName||u.email}</span>
+                    <span className="share-user-email">{u.email} · <span style={{color:"var(--green)"}}>Đã nhận</span></span>
+                  </div>
+                  <button className="share-revoke-btn" disabled={revoking===u.uid}
+                    onClick={()=>handleRevoke(u.uid)}>
+                    {revoking===u.uid ? "..." : "Thu Hồi"}
+                  </button>
                 </div>
+              ))}
+              {/* Not yet shared */}
+              {unsharedUsers.map(u=>(
+                <label key={u.uid} className={`share-user-row${selected.includes(u.uid)?" checked":""}`}>
+                  <input type="checkbox" checked={selected.includes(u.uid)} onChange={()=>toggle(u.uid)}/>
+                  <div className="share-user-avatar">{(u.displayName||u.email)[0].toUpperCase()}</div>
+                  <div className="share-user-info">
+                    <span className="share-user-name">{u.displayName||u.email}</span>
+                    <span className="share-user-email">{u.email}</span>
+                  </div>
+                </label>
+              ))}
+              {userList.length === 0 && <div style={{textAlign:"center",padding:"16px",color:"var(--text-dim)"}}>Không có user nào</div>}
+            </div>
           )}
         </div>
         <div className="modal-footer">
-          <button className="btn-cancel" onClick={onClose}>Hủy</button>
-          <button className="btn-save" disabled={selected.length===0} onClick={()=>onShare(team,rows,selected)}>
-            <Icon name="check" size={13}/> Gửi cho {selected.length} user
-          </button>
+          <button className="btn-cancel" onClick={onClose}>Đóng</button>
+          {unsharedUsers.length > 0 && (
+            <button className="btn-save" disabled={selected.length===0}
+              onClick={async ()=>{ await onShare(team,rows,selected); reload(); setSelected([]); }}>
+              <Icon name="check" size={13}/> Gửi cho {selected.length || ""} user
+            </button>
+          )}
         </div>
       </div>
     </div>
