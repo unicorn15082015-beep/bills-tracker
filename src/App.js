@@ -252,7 +252,10 @@ export default function App() {
         setLoading(false);
       };
       loadAll();
-      return () => { u3(); };
+      const adminUid = user.uid;
+      const qGame = query(collection(db, `users/${adminUid}/games`), orderBy("createdAt","desc"));
+      const u4 = onSnapshot(qGame, s => setGameRows(s.docs.map(d=>({id:d.id,...d.data()}))));
+      return () => { u3(); u4(); };
     }
   }, [user]);
 
@@ -460,6 +463,11 @@ export default function App() {
                 onClick={() => { setTab("admin"); setAdminSection("tasks"); setSidebarOpen(false); }}>
                 <span className="nav-icon"><Icon name="calendar" size={16}/></span>
                 Việc Cần Làm
+              </button>
+              <button className={`nav-btn ${tab==="game"?"active":""}`}
+                onClick={() => { setTab("game"); setSidebarOpen(false); }}>
+                <span className="nav-icon"><Icon name="grid" size={16}/></span>
+                Game
               </button>
             </>
           )}
@@ -874,7 +882,7 @@ export default function App() {
           )}
 
           {/* ── GAME TAB ── */}
-          {tab==="game" && !isAdmin && (() => {
+          {tab==="game" && (() => {
             const teams = ["all", ...Array.from(new Set(gameRows.map(r=>r.team).filter(Boolean)))];
             const displayed = gameTeam==="all" ? gameRows : gameRows.filter(r=>r.team===gameTeam);
             const smG = k => GAME_STATUS.find(s=>s.key===k) || GAME_STATUS[0];
