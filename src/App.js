@@ -1630,9 +1630,11 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
         {/* Internal tab bar */}
         <div className="admin-detail-tabs">
           {[
-            { key:"chi",    label:"Danh Sách Chi",  count: chi.length,  color:"var(--red)" },
-            { key:"nhan",   label:"Nhập Quỹ",        count: nhan.length, color:"var(--green)" },
-            { key:"nhanvien", label:"Nhân Viên",     count: Object.keys(staffUser).length, color:"var(--blue)" },
+            { key:"chi",      label:"Danh Sách Chi", count: chi.length,                              color:"var(--red)"   },
+            { key:"nhan",     label:"Nhập Quỹ",       count: nhan.length,                             color:"var(--green)" },
+            { key:"nhanvien", label:"Nhân Viên",      count: Object.keys(staffUser).length,           color:"var(--blue)"  },
+            { key:"hoan",     label:"Hoàn Tiền",      count: hoan,                                    color:"#f87171"      },
+            { key:"mid",      label:"Mid Hold",       count: mid,                                     color:"#fb923c"      },
           ].map(t => (
             <button key={t.key} className={`adt-tab${detailTab===t.key?" active":""}`}
               style={detailTab===t.key?{borderBottomColor:t.color,color:t.color}:{}}
@@ -1729,6 +1731,66 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+        )}
+
+        {detailTab === "hoan" && (
+          <div className="section" style={{borderTop:"none",borderRadius:"0 0 12px 12px"}}>
+            {chi.filter(r=>r.cancelled).length === 0 ? <EmptyState text="Không có giao dịch hoàn tiền"/> : (
+              <div style={{overflowX:"auto"}}>
+                <table className="data-table">
+                  <thead><tr>
+                    <th>Ngày</th><th>Account</th>
+                    <th style={{textAlign:"right"}}>VND</th>
+                    <th style={{textAlign:"right"}}>USD</th>
+                    <th>Người Mua</th><th style={{width:70}}>Proof</th><th>Ghi Chú</th>
+                  </tr></thead>
+                  <tbody>
+                    {[...chi].filter(r=>r.cancelled).sort((a,b)=>getRowDate(b)-getRowDate(a)).map(r=>(
+                      <tr key={r.id}>
+                        <td className="date-cell">{fmtDate(r)}</td>
+                        <td><span className="acc-name">{r.account}</span></td>
+                        <td className="num red-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
+                        <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
+                        <td><span className="badge blue">{r.nguoiMua}</span></td>
+                        <td className="proof-cell">{r.proof?<a href={r.proof} target="_blank" rel="noopener noreferrer" className="note-link-badge">Link ↗</a>:renderNote(r.ghiChu)}</td>
+                        <td className="note-cell"><span className="note-text-part">{r.proof?r.ghiChu:(r.ghiChu||"").replace(/(https?:\/\/[^\s]+)/g,"").trim()}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {detailTab === "mid" && (
+          <div className="section" style={{borderTop:"none",borderRadius:"0 0 12px 12px"}}>
+            {chi.filter(r=>r.midHold&&!r.cancelled).length === 0 ? <EmptyState text="Không có giao dịch Mid Hold"/> : (
+              <div style={{overflowX:"auto"}}>
+                <table className="data-table">
+                  <thead><tr>
+                    <th>Ngày</th><th>Account</th>
+                    <th style={{textAlign:"right"}}>VND</th>
+                    <th style={{textAlign:"right"}}>USD</th>
+                    <th>Người Mua</th><th style={{width:70}}>Proof</th><th>Ghi Chú</th>
+                  </tr></thead>
+                  <tbody>
+                    {[...chi].filter(r=>r.midHold&&!r.cancelled).sort((a,b)=>getRowDate(b)-getRowDate(a)).map(r=>(
+                      <tr key={r.id}>
+                        <td className="date-cell">{fmtDate(r)}</td>
+                        <td><span className="acc-name">{r.account}</span></td>
+                        <td className="num red-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
+                        <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
+                        <td><span className="badge blue">{r.nguoiMua}</span></td>
+                        <td className="proof-cell">{r.proof?<a href={r.proof} target="_blank" rel="noopener noreferrer" className="note-link-badge">Link ↗</a>:renderNote(r.ghiChu)}</td>
+                        <td className="note-cell"><span className="note-text-part">{r.proof?r.ghiChu:(r.ghiChu||"").replace(/(https?:\/\/[^\s]+)/g,"").trim()}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}
