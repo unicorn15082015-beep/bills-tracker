@@ -929,6 +929,7 @@ function AdminPage({ usdRate }) {
   const [nameDraft,   setNameDraft]  = useState("");
   const [selectedUid, setSelectedUid] = useState(null);
   const [userSort,    setUserSort]   = useState("chi_desc");
+  const [detailTab,   setDetailTab]  = useState("chi");
 
   useEffect(() => {
     const load = async () => {
@@ -981,7 +982,6 @@ function AdminPage({ usdRate }) {
   const totChiVND  = useMemo(() => activeFlat.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0), [activeFlat]);
   const totChiUSD  = useMemo(() => activeFlat.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [activeFlat]);
   const totNhanVND = useMemo(() => allNhanFlat.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0), [allNhanFlat]);
-  const totNhanUSD = useMemo(() => allNhanFlat.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [allNhanFlat]);
   const conVND = totNhanVND - totChiVND;
 
   const topGames = useMemo(() => {
@@ -1000,137 +1000,209 @@ function AdminPage({ usdRate }) {
   if (adminLoad) return <div className="loading"><div className="spinner"/>Đang tải dữ liệu admin...</div>;
   if (adminError) return (
     <div className="section">
-      <div className="section-header"><span className="section-title">Lỗi Kết Nối Admin</span></div>
+      <div className="section-header"><span className="section-title">Lỗi Admin</span></div>
       <div style={{padding:"20px 24px"}}><div className="login-error">{adminError}</div></div>
     </div>
   );
 
-  // ── User detail drill-down ──
-  if (selectedUid) {
-    const u    = userList.find(x => x.uid === selectedUid) || {};
-    const chi  = allChi[selectedUid]  || [];
-    const nhan = allNhan[selectedUid] || [];
+  // ── helpers ──
+  const userStats = (uid) => {
+    const chi  = allChi[uid]  || [];
+    const nhan = allNhan[uid] || [];
     const act  = chi.filter(r => !r.cancelled);
     const cVND = act.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
     const cUSD = act.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
     const nVND = nhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
     const nUSD = nhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
-    const bal  = (nVND - cVND) + (nUSD - cUSD) * usdRate;
-    const hoan = chi.filter(r=>r.cancelled).length;
-    const mid  = chi.filter(r=>r.midHold&&!r.cancelled).length;
+    return {
+      chi, nhan, act,
+      cVND, cUSD, nVND, nUSD,
+      bal:   (nVND - cVND) + (nUSD - cUSD) * usdRate,
+      hoan:  chi.filter(r=>r.cancelled).length,
+      mid:   chi.filter(r=>r.midHold&&!r.cancelled).length,
+      total: cVND + cUSD * usdRate,
+    };
+  };
+
+  const saveDisplayName = async (uid) => {
+    const name = nameDraft.trim();
+    if (name) {
+      await setDoc(doc(db, "users", uid), { displayName: name }, { merge: true });
+      setUserList(prev => prev.map(x => x.uid === uid ? { ...x, displayName: name } : x));
+    }
+    setEditingUid(null);
+  };
+
+  // ── User detail ──
+  if (selectedUid) {
+    const u = userList.find(x => x.uid === selectedUid) || {};
+    const { chi, nhan, act, cVND, cUSD, nVND, nUSD, bal, hoan, mid } = userStats(selectedUid);
     const label = u.displayName || u.email || selectedUid;
+
+    const staffUser = {};
+    act.forEach(r => {
+      const name = normalizeName(r.nguoiMua);
+      if (!staffUser[name]) staffUser[name] = { vnd:0, usd:0, count:0 };
+      if (r.currency==="VND") staffUser[name].vnd += r.soTien||0;
+      else staffUser[name].usd += r.soTien||0;
+      staffUser[name].count++;
+    });
 
     return (
       <>
-        {/* Back bar */}
+        {/* Breadcrumb bar */}
         <div className="admin-detail-bar">
-          <button className="admin-back-btn" onClick={() => setSelectedUid(null)}>
-            ← Quay Lại
-          </button>
-          <span className="admin-detail-title">{label}</span>
-          <span style={{fontSize:11,color:"var(--text-dim)"}}>{u.email}</span>
+          <button className="admin-back-btn" onClick={() => setSelectedUid(null)}>← Quay Lại</button>
+          <div className="admin-detail-title">
+            {editingUid === selectedUid ? (
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}
+                  onKeyDown={e=>{if(e.key==="Enter")saveDisplayName(selectedUid);if(e.key==="Escape")setEditingUid(null);}}
+                  autoFocus className="auc-name-input"/>
+                <button onClick={()=>saveDisplayName(selectedUid)} className="icon-btn" style={{color:"var(--green)"}}><Icon name="check" size={12}/></button>
+                <button onClick={()=>setEditingUid(null)} className="icon-btn"><Icon name="close" size={12}/></button>
+              </div>
+            ) : (
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span>{label}</span>
+                <button className="icon-btn" onClick={()=>{setEditingUid(selectedUid);setNameDraft(u.displayName||"");}}><Icon name="edit" size={12}/></button>
+              </div>
+            )}
+          </div>
+          {u.displayName && <span style={{fontSize:11,color:"var(--text-dim)"}}>{u.email}</span>}
         </div>
 
-        {/* User summary cards */}
-        <div className="summary-row">
-          <div className="sum-card red">
-            <div className="sum-card-header"><div className="sum-label">Tổng Chi</div><div className="sum-card-icon"><Icon name="arrow_down" size={17}/></div></div>
-            <div className="sum-value">{fmtVND(cVND)}</div>
-            <div className="sum-sub">USD: {fmtUSD(cUSD)}</div>
-          </div>
-          <div className="sum-card green">
-            <div className="sum-card-header"><div className="sum-label">Tổng Nhập</div><div className="sum-card-icon"><Icon name="arrow_up" size={17}/></div></div>
-            <div className="sum-value">{fmtVND(nVND)}</div>
-            <div className="sum-sub">USD: {fmtUSD(nUSD)}</div>
-          </div>
-          <div className={`sum-card ${bal>=0?"blue":"red"}`}>
-            <div className="sum-card-header"><div className="sum-label">Còn Lại</div><div className="sum-card-icon"><Icon name="wallet" size={17}/></div></div>
-            <div className="sum-value">{fmtVND(bal)}</div>
-            <div className="sum-sub">{act.length} giao dịch · {hoan} hoàn · {mid} mid</div>
-          </div>
+        {/* Quick stats strip */}
+        <div className="admin-stats-strip">
+          <div className="ass-item"><span className="ass-label">Chi VND</span><span className="ass-val red-text">{fmtVND(cVND)}</span></div>
+          <div className="ass-sep"/>
+          <div className="ass-item"><span className="ass-label">Chi USD</span><span className="ass-val yellow-text">{fmtUSD(cUSD)}</span></div>
+          <div className="ass-sep"/>
+          <div className="ass-item"><span className="ass-label">Nhập VND</span><span className="ass-val green-text">{fmtVND(nVND)}</span></div>
+          <div className="ass-sep"/>
+          <div className="ass-item"><span className="ass-label">Nhập USD</span><span className="ass-val yellow-text">{fmtUSD(nUSD)}</span></div>
+          <div className="ass-sep"/>
+          <div className="ass-item"><span className="ass-label">Còn Lại</span><span className={`ass-val ${bal>=0?"blue-text":"red-text"}`}>{fmtVND(bal)}</span></div>
+          <div className="ass-sep"/>
+          <div className="ass-item"><span className="ass-label">Giao Dịch</span><span className="ass-val">{act.length}</span></div>
+          <div className="ass-sep"/>
+          <div className="ass-item"><span className="ass-label">Hoàn Tiền</span><span className="ass-val" style={{color:"var(--red)"}}>{hoan}</span></div>
+          <div className="ass-sep"/>
+          <div className="ass-item"><span className="ass-label">Mid Hold</span><span className="ass-val" style={{color:"#fb923c"}}>{mid}</span></div>
         </div>
 
-        {/* Chi table */}
-        <div className="section">
-          <div className="section-header">
-            <span className="section-title">Danh Sách Chi <span className="badge purple">{chi.length}</span></span>
+        {/* Internal tab bar */}
+        <div className="admin-detail-tabs">
+          {[
+            { key:"chi",    label:"Danh Sách Chi",  count: chi.length,  color:"var(--red)" },
+            { key:"nhan",   label:"Nhập Quỹ",        count: nhan.length, color:"var(--green)" },
+            { key:"nhanvien", label:"Nhân Viên",     count: Object.keys(staffUser).length, color:"var(--blue)" },
+          ].map(t => (
+            <button key={t.key} className={`adt-tab${detailTab===t.key?" active":""}`}
+              style={detailTab===t.key?{borderBottomColor:t.color,color:t.color}:{}}
+              onClick={()=>setDetailTab(t.key)}>
+              {t.label} <span className="adt-count">{t.count}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        {detailTab === "chi" && (
+          <div className="section" style={{borderTop:"none",borderRadius:"0 0 12px 12px"}}>
+            {chi.length === 0 ? <EmptyState text="Chưa có giao dịch chi"/> : (
+              <div style={{overflowX:"auto"}}>
+                <table className="data-table">
+                  <thead><tr>
+                    <th>Ngày</th><th>Account</th>
+                    <th style={{textAlign:"right"}}>VND</th>
+                    <th style={{textAlign:"right"}}>USD</th>
+                    <th>Người Mua</th><th style={{width:70}}>Proof</th><th>Ghi Chú</th><th style={{width:90}}>Trạng Thái</th>
+                  </tr></thead>
+                  <tbody>
+                    {[...chi].sort((a,b)=>getRowDate(b)-getRowDate(a)).map(r => (
+                      <tr key={r.id} className={r.cancelled?"cancelled":""}>
+                        <td className="date-cell">{fmtDate(r)}</td>
+                        <td><span className="acc-name">{r.account}</span></td>
+                        <td className="num red-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
+                        <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
+                        <td><span className="badge blue">{r.nguoiMua}</span></td>
+                        <td className="proof-cell">{r.proof?<a href={r.proof} target="_blank" rel="noopener noreferrer" className="note-link-badge">Link ↗</a>:renderNote(r.ghiChu)}</td>
+                        <td className="note-cell"><span className="note-text-part">{r.proof?r.ghiChu:(r.ghiChu||"").replace(/(https?:\/\/[^\s]+)/g,"").trim()}</span></td>
+                        <td className="status-cell">
+                          {r.cancelled && <span className="badge red">Hoàn</span>}
+                          {r.midHold   && <span className="badge orange">Mid</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          {chi.length === 0 ? <EmptyState text="Chưa có giao dịch chi"/> : (
-            <div style={{overflowX:"auto"}}>
+        )}
+
+        {detailTab === "nhan" && (
+          <div className="section" style={{borderTop:"none",borderRadius:"0 0 12px 12px"}}>
+            {nhan.length === 0 ? <EmptyState text="Chưa có nhập quỹ"/> : (
+              <div style={{overflowX:"auto"}}>
+                <table className="data-table">
+                  <thead><tr>
+                    <th>Ngày</th><th>Loại</th>
+                    <th style={{textAlign:"right"}}>VND</th>
+                    <th style={{textAlign:"right"}}>USD</th>
+                    <th>Người Chuyển</th><th>Ghi Chú</th>
+                  </tr></thead>
+                  <tbody>
+                    {[...nhan].sort((a,b)=>getRowDate(b)-getRowDate(a)).map(r => (
+                      <tr key={r.id}>
+                        <td className="date-cell">{fmtDate(r)}</td>
+                        <td><span className={`badge ${r.currency==="USD"?"yellow":"green"}`}>{r.currency}</span></td>
+                        <td className="num green-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
+                        <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
+                        <td><span className="badge green">{r.nguoiChuyen}</span></td>
+                        <td className="note-cell"><span className="note-text-part">{r.ghiChu}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {detailTab === "nhanvien" && (
+          <div className="section" style={{borderTop:"none",borderRadius:"0 0 12px 12px"}}>
+            {Object.keys(staffUser).length === 0 ? <EmptyState text="Chưa có dữ liệu"/> : (
               <table className="data-table">
                 <thead><tr>
-                  <th>Ngày</th><th>Account</th>
-                  <th style={{textAlign:"right"}}>VND</th>
-                  <th style={{textAlign:"right"}}>USD</th>
-                  <th>Người Mua</th><th>Proof</th><th>Ghi Chú</th><th>Trạng Thái</th>
+                  <th>Nhân Viên</th>
+                  <th style={{textAlign:"right"}}>Số Acc</th>
+                  <th style={{textAlign:"right"}}>Chi VND</th>
+                  <th style={{textAlign:"right"}}>Chi USD</th>
+                  <th style={{textAlign:"right"}}>Tổng Quy Đổi</th>
                 </tr></thead>
                 <tbody>
-                  {[...chi].sort((a,b)=>getRowDate(b)-getRowDate(a)).map(r => (
-                    <tr key={r.id} className={r.cancelled?"cancelled":""}>
-                      <td className="date-cell">{fmtDate(r)}</td>
-                      <td><span className="acc-name">{r.account}</span></td>
-                      <td className="num red-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
-                      <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
-                      <td><span className="badge blue">{r.nguoiMua}</span></td>
-                      <td className="proof-cell">
-                        {r.proof
-                          ? <a href={r.proof} target="_blank" rel="noopener noreferrer" className="note-link-badge">Link ↗</a>
-                          : renderNote(r.ghiChu)}
-                      </td>
-                      <td className="note-cell">
-                        <span className="note-text-part">
-                          {r.proof ? r.ghiChu : (r.ghiChu||"").replace(/(https?:\/\/[^\s]+)/g,"").trim()}
-                        </span>
-                      </td>
-                      <td className="status-cell">
-                        {r.cancelled && <span className="badge red">Hoàn</span>}
-                        {r.midHold   && <span className="badge orange">Mid</span>}
-                      </td>
+                  {Object.entries(staffUser).sort((a,b)=>(b[1].vnd+b[1].usd*usdRate)-(a[1].vnd+a[1].usd*usdRate)).map(([name,s])=>(
+                    <tr key={name}>
+                      <td><span className="badge blue">{name}</span></td>
+                      <td className="num"><span className="badge purple">{s.count} acc</span></td>
+                      <td className="num red-text">{fmtVND(s.vnd)}</td>
+                      <td className="num yellow-text">{fmtUSD(s.usd)}</td>
+                      <td className="num red-text">{fmtVND(s.vnd+s.usd*usdRate)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-        </div>
-
-        {/* Nhan table */}
-        <div className="section">
-          <div className="section-header">
-            <span className="section-title">Nhập Quỹ <span className="badge green">{nhan.length}</span></span>
+            )}
           </div>
-          {nhan.length === 0 ? <EmptyState text="Chưa có nhập quỹ"/> : (
-            <div style={{overflowX:"auto"}}>
-              <table className="data-table">
-                <thead><tr>
-                  <th>Ngày</th><th>Loại</th>
-                  <th style={{textAlign:"right"}}>VND</th>
-                  <th style={{textAlign:"right"}}>USD</th>
-                  <th>Người Chuyển</th><th>Ghi Chú</th>
-                </tr></thead>
-                <tbody>
-                  {[...nhan].sort((a,b)=>getRowDate(b)-getRowDate(a)).map(r => (
-                    <tr key={r.id}>
-                      <td className="date-cell">{fmtDate(r)}</td>
-                      <td><span className={`badge ${r.currency==="USD"?"yellow":"green"}`}>{r.currency}</span></td>
-                      <td className="num green-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
-                      <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
-                      <td><span className="badge green">{r.nguoiChuyen}</span></td>
-                      <td className="note-cell"><span className="note-text-part">{r.ghiChu}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        )}
       </>
     );
   }
 
   // ── Overview ──
-  const hoанAll = allChiFlat.filter(r=>r.cancelled).length;
-  const midAll  = allChiFlat.filter(r=>r.midHold&&!r.cancelled).length;
+  const hoanAll  = allChiFlat.filter(r=>r.cancelled).length;
+  const midAll   = allChiFlat.filter(r=>r.midHold&&!r.cancelled).length;
   const staffAll = {};
   activeFlat.forEach(r => {
     const name = normalizeName(r.nguoiMua);
@@ -1140,38 +1212,46 @@ function AdminPage({ usdRate }) {
     staffAll[name].count++;
   });
 
+  const sortedUsers = [...userList].sort((a,b) => {
+    const sa = userStats(a.uid), sb = userStats(b.uid);
+    if (userSort === "chi_desc")   return sb.total - sa.total;
+    if (userSort === "chi_asc")    return sa.total - sb.total;
+    if (userSort === "nhan_desc")  return (sb.nVND+sb.nUSD*usdRate) - (sa.nVND+sa.nUSD*usdRate);
+    if (userSort === "bal_desc")   return sb.bal   - sa.bal;
+    if (userSort === "bal_asc")    return sa.bal   - sb.bal;
+    if (userSort === "count_desc") return sb.act.length - sa.act.length;
+    if (userSort === "name_asc")   return (a.displayName||a.email||"").localeCompare(b.displayName||b.email||"");
+    return 0;
+  });
+
   return (
     <>
-      {/* Global summary */}
-      <div className="summary-row">
-        <div className="sum-card red">
-          <div className="sum-card-header"><div className="sum-label">Tổng Chi · All Users</div><div className="sum-card-icon"><Icon name="arrow_down" size={17}/></div></div>
-          <div className="sum-value">{fmtVND(totChiVND)}</div>
-          <div className="sum-sub">USD: {fmtUSD(totChiUSD)}</div>
-        </div>
-        <div className="sum-card green">
-          <div className="sum-card-header"><div className="sum-label">Tổng Nhập · All Users</div><div className="sum-card-icon"><Icon name="arrow_up" size={17}/></div></div>
-          <div className="sum-value">{fmtVND(totNhanVND)}</div>
-          <div className="sum-sub">USD: {fmtUSD(totNhanUSD)}</div>
-        </div>
-        <div className={`sum-card ${conVND>=0?"blue":"red"}`}>
-          <div className="sum-card-header"><div className="sum-label">Còn Lại · Tổng</div><div className="sum-card-icon"><Icon name="wallet" size={17}/></div></div>
-          <div className="sum-value">{fmtVND(conVND)}</div>
-          <div className="sum-sub">{hoанAll} hoàn · {midAll} mid hold</div>
-        </div>
+      {/* Global stats strip */}
+      <div className="admin-stats-strip">
+        <div className="ass-item"><span className="ass-label">Tổng Chi VND</span><span className="ass-val red-text">{fmtVND(totChiVND)}</span></div>
+        <div className="ass-sep"/>
+        <div className="ass-item"><span className="ass-label">Tổng Chi USD</span><span className="ass-val yellow-text">{fmtUSD(totChiUSD)}</span></div>
+        <div className="ass-sep"/>
+        <div className="ass-item"><span className="ass-label">Tổng Nhập</span><span className="ass-val green-text">{fmtVND(totNhanVND)}</span></div>
+        <div className="ass-sep"/>
+        <div className="ass-item"><span className="ass-label">Còn Lại</span><span className={`ass-val ${conVND>=0?"blue-text":"red-text"}`}>{fmtVND(conVND)}</span></div>
+        <div className="ass-sep"/>
+        <div className="ass-item"><span className="ass-label">Users</span><span className="ass-val">{userList.length}</span></div>
+        <div className="ass-sep"/>
+        <div className="ass-item"><span className="ass-label">Giao Dịch</span><span className="ass-val">{activeFlat.length}</span></div>
+        <div className="ass-sep"/>
+        <div className="ass-item"><span className="ass-label">Hoàn Tiền</span><span className="ass-val" style={{color:"var(--red)"}}>{hoanAll}</span></div>
+        <div className="ass-sep"/>
+        <div className="ass-item"><span className="ass-label">Mid Hold</span><span className="ass-val" style={{color:"#fb923c"}}>{midAll}</span></div>
       </div>
 
-      {/* User cards — click to drill down */}
+      {/* User table */}
       <div className="section">
         <div className="section-header">
-          <span className="section-title">Tất Cả Users <span className="badge purple">{userList.length}</span></span>
+          <span className="section-title">Users <span className="badge purple">{userList.length}</span></span>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:11,color:"var(--text-dim)"}}>Sắp xếp:</span>
-            <select
-              value={userSort}
-              onChange={e => setUserSort(e.target.value)}
-              className="admin-sort-select"
-            >
+            <select value={userSort} onChange={e=>setUserSort(e.target.value)} className="admin-sort-select">
               <option value="chi_desc">Chi nhiều nhất</option>
               <option value="chi_asc">Chi ít nhất</option>
               <option value="nhan_desc">Nhập nhiều nhất</option>
@@ -1182,162 +1262,110 @@ function AdminPage({ usdRate }) {
             </select>
           </div>
         </div>
-        {userList.length === 0 ? <EmptyState text="Chưa có dữ liệu"/> : (
-          <div className="admin-user-grid">
-            {[...userList].sort((a, b) => {
-              const stat = u => {
-                const chi  = allChi[u.uid]  || [];
-                const nhan = allNhan[u.uid] || [];
-                const act  = chi.filter(r=>!r.cancelled);
-                const cVND = act.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
-                const cUSD = act.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
-                const nVND = nhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
-                const nUSD = nhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
-                return {
-                  chi: cVND + cUSD * usdRate,
-                  nhan: nVND + nUSD * usdRate,
-                  bal: (nVND - cVND) + (nUSD - cUSD) * usdRate,
-                  count: act.length,
-                  name: (a.displayName || a.email || "").toLowerCase(),
-                };
-              };
-              const sa = stat(a), sb = stat(b);
-              if (userSort === "chi_desc")   return sb.chi   - sa.chi;
-              if (userSort === "chi_asc")    return sa.chi   - sb.chi;
-              if (userSort === "nhan_desc")  return sb.nhan  - sa.nhan;
-              if (userSort === "bal_desc")   return sb.bal   - sa.bal;
-              if (userSort === "bal_asc")    return sa.bal   - sb.bal;
-              if (userSort === "count_desc") return sb.count - sa.count;
-              if (userSort === "name_asc")   return (a.displayName||a.email||"").localeCompare(b.displayName||b.email||"");
-              return 0;
-            }).map(u => {
-              const chi  = allChi[u.uid]  || [];
-              const nhan = allNhan[u.uid] || [];
-              const act  = chi.filter(r=>!r.cancelled);
-              const cVND = act.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
-              const cUSD = act.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
-              const nVND = nhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
-              const nUSD = nhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
-              const bal  = (nVND - cVND) + (nUSD - cUSD) * usdRate;
-              const hoan = chi.filter(r=>r.cancelled).length;
-              const mid  = chi.filter(r=>r.midHold&&!r.cancelled).length;
-              const label = u.displayName || u.email || u.uid;
-              const isEditing = editingUid === u.uid;
-
-              const saveDisplayName = async () => {
-                const name = nameDraft.trim();
-                if (name) {
-                  await setDoc(doc(db, "users", u.uid), { displayName: name }, { merge: true });
-                  setUserList(prev => prev.map(x => x.uid === u.uid ? { ...x, displayName: name } : x));
-                }
-                setEditingUid(null);
-              };
-
-              return (
-                <div key={u.uid} className="admin-user-card" onClick={() => !isEditing && setSelectedUid(u.uid)}>
-                  <div className="auc-header">
-                    {isEditing ? (
-                      <div style={{display:"flex",gap:6,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-                        <input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}
-                          onKeyDown={e=>{if(e.key==="Enter")saveDisplayName();if(e.key==="Escape")setEditingUid(null);}}
-                          autoFocus className="auc-name-input"/>
-                        <button onClick={saveDisplayName} className="icon-btn" style={{color:"var(--green)"}}><Icon name="check" size={12}/></button>
-                        <button onClick={()=>setEditingUid(null)} className="icon-btn"><Icon name="close" size={12}/></button>
-                      </div>
-                    ) : (
-                      <div style={{display:"flex",gap:6,alignItems:"center",minWidth:0}}>
-                        <span className="auc-name">{label}</span>
-                        <button className="icon-btn" title="Đổi tên" onClick={e=>{e.stopPropagation();setEditingUid(u.uid);setNameDraft(u.displayName||"");}}><Icon name="edit" size={11}/></button>
-                      </div>
-                    )}
-                    <div className="auc-badges">
-                      {hoan>0 && <span className="badge red">{hoan} hoàn</span>}
-                      {mid>0  && <span className="badge orange">{mid} mid</span>}
-                    </div>
-                  </div>
-                  {u.displayName && <div className="auc-email">{u.email}</div>}
-                  <div className="auc-stats">
-                    <div className="auc-stat">
-                      <span className="auc-stat-label">Chi VND</span>
-                      <span className="auc-stat-val red-text">{fmtVND(cVND)}</span>
-                    </div>
-                    <div className="auc-stat">
-                      <span className="auc-stat-label">Chi USD</span>
-                      <span className="auc-stat-val yellow-text">{fmtUSD(cUSD)}</span>
-                    </div>
-                    <div className="auc-stat">
-                      <span className="auc-stat-label">Nhập</span>
-                      <span className="auc-stat-val green-text">{fmtVND(nVND)}</span>
-                    </div>
-                    <div className="auc-stat">
-                      <span className="auc-stat-label">Còn Lại</span>
-                      <span className={`auc-stat-val ${bal>=0?"blue-text":"red-text"}`}>{fmtVND(bal)}</span>
-                    </div>
-                  </div>
-                  <div className="auc-footer">
-                    <span>{act.length} giao dịch</span>
-                    <span className="auc-detail-hint">Xem chi tiết →</span>
-                  </div>
-                </div>
-              );
-            })}
+        {sortedUsers.length === 0 ? <EmptyState text="Chưa có dữ liệu"/> : (
+          <div style={{overflowX:"auto"}}>
+            <table className="data-table admin-user-table">
+              <thead><tr>
+                <th>Tên / Email</th>
+                <th style={{textAlign:"right"}}>Chi VND</th>
+                <th style={{textAlign:"right"}}>Chi USD</th>
+                <th style={{textAlign:"right"}}>Nhập VND</th>
+                <th style={{textAlign:"right"}}>Còn Lại</th>
+                <th style={{textAlign:"right"}}>Giao Dịch</th>
+                <th style={{textAlign:"center"}}>Hoàn</th>
+                <th style={{textAlign:"center"}}>Mid</th>
+                <th style={{width:40}}></th>
+              </tr></thead>
+              <tbody>
+                {sortedUsers.map(u => {
+                  const { act, cVND, cUSD, nVND, bal, hoan, mid } = userStats(u.uid);
+                  const label = u.displayName || u.email || u.uid;
+                  const isEditing = editingUid === u.uid;
+                  return (
+                    <tr key={u.uid} className="admin-user-row" onClick={() => !isEditing && setSelectedUid(u.uid)}>
+                      <td>
+                        {isEditing ? (
+                          <div style={{display:"flex",gap:6,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+                            <input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}
+                              onKeyDown={e=>{if(e.key==="Enter")saveDisplayName(u.uid);if(e.key==="Escape")setEditingUid(null);}}
+                              autoFocus className="auc-name-input"/>
+                            <button onClick={()=>saveDisplayName(u.uid)} className="icon-btn" style={{color:"var(--green)"}}><Icon name="check" size={12}/></button>
+                            <button onClick={()=>setEditingUid(null)} className="icon-btn"><Icon name="close" size={12}/></button>
+                          </div>
+                        ) : (
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <div>
+                              <div className="admin-user-name">{label}</div>
+                              {u.displayName && <div style={{fontSize:10,color:"var(--text-dim)"}}>{u.email}</div>}
+                            </div>
+                            <button className="icon-btn" title="Đổi tên" onClick={e=>{e.stopPropagation();setEditingUid(u.uid);setNameDraft(u.displayName||"");}}><Icon name="edit" size={11}/></button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="num red-text">{fmtVND(cVND)}</td>
+                      <td className="num yellow-text">{fmtUSD(cUSD)}</td>
+                      <td className="num green-text">{fmtVND(nVND)}</td>
+                      <td className={`num ${bal>=0?"blue-text":"red-text"}`}>{fmtVND(bal)}</td>
+                      <td className="num">{act.length}</td>
+                      <td style={{textAlign:"center"}}>{hoan>0?<span className="badge red">{hoan}</span>:"—"}</td>
+                      <td style={{textAlign:"center"}}>{mid>0?<span className="badge orange">{mid}</span>:"—"}</td>
+                      <td style={{textAlign:"center",color:"var(--text-dim)",fontSize:14}}>→</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* Staff stats across all users */}
-      {Object.keys(staffAll).length > 0 && (
-        <div className="section">
-          <div className="section-header">
-            <span className="section-title">Nhân Viên Thu Mua · Toàn Hệ Thống</span>
+      {/* Two-column: staff + top games */}
+      <div className="admin-bottom-grid">
+        {Object.keys(staffAll).length > 0 && (
+          <div className="section">
+            <div className="section-header"><span className="section-title">Nhân Viên Thu Mua</span></div>
+            <table className="data-table">
+              <thead><tr>
+                <th>Tên</th>
+                <th style={{textAlign:"right"}}>Acc</th>
+                <th style={{textAlign:"right"}}>Chi VND</th>
+                <th style={{textAlign:"right"}}>Chi USD</th>
+              </tr></thead>
+              <tbody>
+                {Object.entries(staffAll).sort((a,b)=>(b[1].vnd+b[1].usd*usdRate)-(a[1].vnd+a[1].usd*usdRate)).map(([name,s])=>(
+                  <tr key={name}>
+                    <td><span className="badge blue">{name}</span></td>
+                    <td className="num"><span className="badge purple">{s.count}</span></td>
+                    <td className="num red-text">{fmtVND(s.vnd)}</td>
+                    <td className="num yellow-text">{fmtUSD(s.usd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <table className="data-table">
-            <thead><tr>
-              <th>Tên</th>
-              <th style={{textAlign:"right"}}>Số Acc</th>
-              <th style={{textAlign:"right"}}>Chi VND</th>
-              <th style={{textAlign:"right"}}>Chi USD</th>
-              <th style={{textAlign:"right"}}>Tổng Quy Đổi</th>
-            </tr></thead>
-            <tbody>
-              {Object.entries(staffAll).sort((a,b)=>(b[1].vnd+b[1].usd*usdRate)-(a[1].vnd+a[1].usd*usdRate)).map(([name,s]) => (
-                <tr key={name}>
-                  <td><span className="badge blue">{name}</span></td>
-                  <td className="num"><span className="badge purple">{s.count} acc</span></td>
-                  <td className="num red-text">{fmtVND(s.vnd)}</td>
-                  <td className="num yellow-text">{fmtUSD(s.usd)}</td>
-                  <td className="num red-text">{fmtVND(s.vnd+s.usd*usdRate)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Top games */}
-      {topGames.length > 0 && (
-        <div className="section">
-          <div className="section-header">
-            <span className="section-title">Top Game Toàn Hệ Thống</span>
-            <span style={{fontSize:11,color:"var(--text-dim)"}}>{activeFlat.length} giao dịch</span>
-          </div>
-          <div className="game-rank-list">
-            {topGames.map((g,i) => {
-              const pct = Math.round((g.count/topGames[0].count)*100);
-              return (
-                <div key={g.name} className="game-rank-item">
-                  <span className="game-rank-pos" style={{color:GAME_COLORS[i%GAME_COLORS.length]}}>#{i+1}</span>
-                  <span className="game-rank-name">{g.name}</span>
-                  <div className="game-rank-bar-wrap">
-                    <div className="game-rank-bar" style={{width:`${pct}%`,background:GAME_COLORS[i%GAME_COLORS.length]}}/>
+        )}
+        {topGames.length > 0 && (
+          <div className="section">
+            <div className="section-header">
+              <span className="section-title">Top Game</span>
+              <span style={{fontSize:11,color:"var(--text-dim)"}}>{activeFlat.length} giao dịch</span>
+            </div>
+            <div className="game-rank-list">
+              {topGames.map((g,i) => {
+                const pct = Math.round((g.count/topGames[0].count)*100);
+                return (
+                  <div key={g.name} className="game-rank-item">
+                    <span className="game-rank-pos" style={{color:GAME_COLORS[i%GAME_COLORS.length]}}>#{i+1}</span>
+                    <span className="game-rank-name">{g.name}</span>
+                    <div className="game-rank-bar-wrap"><div className="game-rank-bar" style={{width:`${pct}%`,background:GAME_COLORS[i%GAME_COLORS.length]}}/></div>
+                    <span className="game-rank-count">{g.count} lần</span>
                   </div>
-                  <span className="game-rank-count">{g.count} lần</span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
 }
