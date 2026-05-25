@@ -2160,6 +2160,56 @@ body {
 .game-row-closed { opacity: 0.5; }
 .game-row-closed .game-loaiacc-cell { text-decoration: line-through; }
 
+/* Share game button */
+.btn-share-game {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(167,139,250,0.4);
+  background: rgba(167,139,250,0.1);
+  color: #a78bfa;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-share-game:hover { background: rgba(167,139,250,0.2); border-color: #a78bfa; }
+
+/* Game name cell */
+.game-name-cell { font-size: 12px; font-weight: 600; color: var(--text); }
+
+/* Share user list */
+.share-user-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.share-user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.share-user-row input[type="checkbox"] { display: none; }
+.share-user-row:hover { border-color: var(--blue); background: rgba(79,142,247,0.06); }
+.share-user-row.checked { border-color: var(--blue); background: rgba(79,142,247,0.1); }
+.share-user-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.share-user-row.checked .share-user-avatar { background: var(--green); }
+.share-user-info { display: flex; flex-direction: column; gap: 1px; }
+.share-user-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.share-user-email { font-size: 11px; color: var(--text-dim); }
+
 /* Note popup button */
 .note-popup-btn {
   background: none;

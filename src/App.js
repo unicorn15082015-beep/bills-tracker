@@ -179,10 +179,12 @@ export default function App() {
   const exportRef = useRef(null);
 
   // ── Game state ──
-  const [gameRows,   setGameRows]   = useState([]);
-  const [gameModal,  setGameModal]  = useState(null);
-  const [gameTeam,   setGameTeam]   = useState("all");
-  const [notePopup,  setNotePopup]  = useState(null);
+  const [gameRows,      setGameRows]      = useState([]);
+  const [gameModal,     setGameModal]     = useState(null);
+  const [gameTeam,      setGameTeam]      = useState("all");
+  const [notePopup,     setNotePopup]     = useState(null);
+  const [shareGameModal,setShareGameModal]= useState(null); // {team, rows}
+  const [sharedRows,    setSharedRows]    = useState([]);
 
   // ── Auth — write user profile to users/{uid} doc so admin can list all users ──
   useEffect(() => {
@@ -223,11 +225,13 @@ export default function App() {
       const uid = user.uid;
       const qChi  = query(collection(db, `users/${uid}/chi`),  orderBy("createdAt","desc"));
       const qNhan = query(collection(db, `users/${uid}/nhan`), orderBy("createdAt","desc"));
-      const qGame = query(collection(db, `users/${uid}/games`), orderBy("createdAt","desc"));
-      const u1 = onSnapshot(qChi,  s => { setChiRows(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); });
-      const u2 = onSnapshot(qNhan, s => setNhanRows(s.docs.map(d=>({id:d.id,...d.data()}))));
-      const u4 = onSnapshot(qGame, s => setGameRows(s.docs.map(d=>({id:d.id,...d.data()}))));
-      return () => { u1(); u2(); u3(); u4(); };
+      const qGame   = query(collection(db, `users/${uid}/games`),       orderBy("createdAt","desc"));
+      const qShared = query(collection(db, `users/${uid}/sharedGames`), orderBy("sharedAt","desc"));
+      const u1 = onSnapshot(qChi,    s => { setChiRows(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); });
+      const u2 = onSnapshot(qNhan,   s => setNhanRows(s.docs.map(d=>({id:d.id,...d.data()}))));
+      const u4 = onSnapshot(qGame,   s => setGameRows(s.docs.map(d=>({id:d.id,...d.data()}))));
+      const u5 = onSnapshot(qShared, s => setSharedRows(s.docs.map(d=>({id:d.id,...d.data()}))));
+      return () => { u1(); u2(); u3(); u4(); u5(); };
     } else {
       // Admin: load ALL users' chi/nhan combined so dashboard shows full picture
       const loadAll = async () => {
@@ -422,6 +426,18 @@ export default function App() {
     });
   };
 
+  const shareGameToUsers = async (team, rows, targetUids) => {
+    try {
+      await Promise.all(targetUids.map(uid =>
+        setDoc(doc(db, `users/${uid}/sharedGames`, `team_${team}`), {
+          team, rows, sharedBy: user.email, sharedAt: serverTimestamp(),
+        })
+      ));
+      pushToast(`Đã chia sẻ Team ${team} cho ${targetUids.length} user`);
+      setShareGameModal(null);
+    } catch (e) { pushToast("Lỗi: " + e.message, "error"); }
+  };
+
   // ── Export handlers ──
   const handleExportJSON = () => { exportJSON(chiRows, nhanRows); pushToast("Đã tải xuống file JSON"); setExportOpen(false); };
   const handleExportCSV  = () => { exportCSV(chiRows, nhanRows);  pushToast("Đã tải xuống file CSV (mở bằng Excel)"); setExportOpen(false); };
@@ -565,8 +581,8 @@ export default function App() {
         <div className="content">
           {loading && tab !== "admin" && <div className="loading"><div className="spinner"/>Đang tải dữ liệu...</div>}
 
-          {/* ── SUMMARY CARDS (not on admin tab) ── */}
-          {!loading && tab !== "admin" && (
+          {/* ── SUMMARY CARDS (not on admin/game tab) ── */}
+          {!loading && tab !== "admin" && tab !== "game" && (
             <div className="summary-row">
               <div className="sum-card red">
                 <div className="sum-card-header">
@@ -883,79 +899,115 @@ export default function App() {
 
           {/* ── GAME TAB ── */}
           {tab==="game" && (() => {
-            const teams = ["all", ...Array.from(new Set(gameRows.map(r=>r.team).filter(Boolean)))];
-            const displayed = gameTeam==="all" ? gameRows : gameRows.filter(r=>r.team===gameTeam);
             const smG = k => GAME_STATUS.find(s=>s.key===k) || GAME_STATUS[0];
-            return (
-              <div className="game-page">
-                {/* Team filter */}
-                <div className="game-team-bar">
-                  {teams.map(t=>(
-                    <button key={t}
-                      className={`game-team-btn${gameTeam===t?" active":""}`}
-                      onClick={()=>setGameTeam(t)}>
-                      {t==="all"?"Tất Cả":t}
-                    </button>
-                  ))}
-                  <button className="btn-add" style={{marginLeft:"auto"}} onClick={()=>setGameModal({})}>
-                    <Icon name="plus" size={13}/> Thêm Game
-                  </button>
-                </div>
-
-                {/* Table */}
-                <div className="section" style={{borderTop:"none"}}>
-                  {displayed.length===0 ? <EmptyState text="Chưa có game nào"/> : (
-                    <div style={{overflowX:"auto"}}>
-                      <table className="data-table game-table">
-                        <thead><tr>
-                          <th style={{width:95}}>Ngày</th>
-                          <th style={{width:110}}>Team</th>
-                          <th>Loại Acc</th>
-                          <th style={{width:80}}>Số Lượng</th>
-                          <th style={{width:130}}>Trạng Thái</th>
-                          <th style={{width:60}}>Ghi Chú</th>
-                          <th style={{width:64}}></th>
-                        </tr></thead>
-                        <tbody>
-                          {displayed.map(r=>{
-                            const sm = smG(r.trangThai);
-                            return (
-                              <tr key={r.id} className={r.trangThai==="closed"?"game-row-closed":""}>
-                                <td className="date-cell">{r.ngay||"—"}</td>
-                                <td><span className="game-team-badge">{r.team||"—"}</span></td>
-                                <td className="game-loaiacc-cell">{r.loaiAcc||"—"}</td>
-                                <td style={{textAlign:"center",fontFamily:"var(--mono)",fontWeight:700}}>{r.soLuong||0}</td>
-                                <td>
-                                  <select
-                                    className="task-status-select"
-                                    value={r.trangThai||"follow"}
-                                    style={{color:sm.color,borderColor:sm.color+"66",background:sm.color+"18"}}
-                                    onChange={e=>saveGame({...r,trangThai:e.target.value},r.id)}
-                                  >
-                                    {GAME_STATUS.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
-                                  </select>
-                                </td>
-                                <td style={{textAlign:"center"}}>
-                                  {r.ghiChu ? (
-                                    <button className="note-popup-btn" onClick={()=>setNotePopup(r)}>
-                                      <Icon name="eye" size={13}/>
-                                    </button>
-                                  ) : <span style={{color:"var(--text-dim)"}}>—</span>}
-                                </td>
-                                <td className="actions">
-                                  <button className="icon-btn" onClick={()=>setGameModal(r)}><Icon name="edit" size={13}/></button>
-                                  <button className="icon-btn danger" onClick={()=>deleteGame(r.id)}><Icon name="trash" size={13}/></button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+            const GameRow = ({r, editable}) => {
+              const sm = smG(r.trangThai);
+              return (
+                <tr key={r.id} className={r.trangThai==="closed"?"game-row-closed":""}>
+                  <td className="date-cell">{r.ngay||"—"}</td>
+                  <td className="game-name-cell">{r.tenGame||"—"}</td>
+                  <td><span className="game-team-badge">{r.team||"—"}</span></td>
+                  <td className="game-loaiacc-cell">{r.loaiAcc||"—"}</td>
+                  <td style={{textAlign:"center",fontFamily:"var(--mono)",fontWeight:700}}>{r.soLuong||0}</td>
+                  <td>
+                    {editable ? (
+                      <select className="task-status-select" value={r.trangThai||"follow"}
+                        style={{color:sm.color,borderColor:sm.color+"66",background:sm.color+"18"}}
+                        onChange={e=>saveGame({...r,trangThai:e.target.value},r.id)}>
+                        {GAME_STATUS.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
+                      </select>
+                    ) : (
+                      <span className="task-status-badge" style={{color:sm.color,borderColor:sm.color+"44",background:sm.color+"18"}}>{sm.label}</span>
+                    )}
+                  </td>
+                  <td style={{textAlign:"center"}}>
+                    {r.ghiChu
+                      ? <button className="note-popup-btn" onClick={()=>setNotePopup(r)}><Icon name="eye" size={13}/></button>
+                      : <span style={{color:"var(--text-dim)"}}>—</span>}
+                  </td>
+                  {editable && (
+                    <td className="actions">
+                      <button className="icon-btn" onClick={()=>setGameModal(r)}><Icon name="edit" size={13}/></button>
+                      <button className="icon-btn danger" onClick={()=>deleteGame(r.id)}><Icon name="trash" size={13}/></button>
+                    </td>
                   )}
-                </div>
-              </div>
+                </tr>
+              );
+            };
+            const GameThead = ({editable}) => (
+              <thead><tr>
+                <th style={{width:95}}>Ngày</th>
+                <th style={{width:130}}>Game</th>
+                <th style={{width:90}}>Team</th>
+                <th>Loại Acc</th>
+                <th style={{width:80}}>Số Lượng</th>
+                <th style={{width:130}}>Trạng Thái</th>
+                <th style={{width:60}}>Ghi Chú</th>
+                {editable && <th style={{width:64}}></th>}
+              </tr></thead>
             );
+
+            if (isAdmin) {
+              const teams = ["all", ...Array.from(new Set(gameRows.map(r=>r.team).filter(Boolean)))];
+              const displayed = gameTeam==="all" ? gameRows : gameRows.filter(r=>r.team===gameTeam);
+              return (
+                <div className="game-page">
+                  <div className="game-team-bar">
+                    {teams.map(t=>(
+                      <button key={t} className={`game-team-btn${gameTeam===t?" active":""}`} onClick={()=>setGameTeam(t)}>
+                        {t==="all"?"Tất Cả":t}
+                      </button>
+                    ))}
+                    <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+                      {gameTeam!=="all" && (
+                        <button className="btn-share-game" onClick={()=>setShareGameModal({team:gameTeam, rows:displayed})}>
+                          <Icon name="users" size={13}/> Chia Sẻ Team {gameTeam}
+                        </button>
+                      )}
+                      <button className="btn-add" onClick={()=>setGameModal({})}>
+                        <Icon name="plus" size={13}/> Thêm Game
+                      </button>
+                    </div>
+                  </div>
+                  <div className="section" style={{borderTop:"none"}}>
+                    {displayed.length===0 ? <EmptyState text="Chưa có game nào"/> : (
+                      <div style={{overflowX:"auto"}}>
+                        <table className="data-table game-table">
+                          <GameThead editable={true}/>
+                          <tbody>{displayed.map(r=><GameRow key={r.id} r={r} editable={true}/>)}</tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            } else {
+              // Non-admin: show shared games from admin
+              const allShared = sharedRows.flatMap(s => (s.rows||[]).map(r=>({...r, _team: s.team, _sharedAt: s.sharedAt})));
+              const sharedTeams = ["all", ...Array.from(new Set(allShared.map(r=>r._team).filter(Boolean)))];
+              const displayedShared = gameTeam==="all" ? allShared : allShared.filter(r=>r._team===gameTeam);
+              return (
+                <div className="game-page">
+                  <div className="game-team-bar">
+                    {sharedTeams.map(t=>(
+                      <button key={t} className={`game-team-btn${gameTeam===t?" active":""}`} onClick={()=>setGameTeam(t)}>
+                        {t==="all"?"Tất Cả":t}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="section" style={{borderTop:"none"}}>
+                    {displayedShared.length===0 ? <EmptyState text="Chưa có game được chia sẻ"/> : (
+                      <div style={{overflowX:"auto"}}>
+                        <table className="data-table game-table">
+                          <GameThead editable={false}/>
+                          <tbody>{displayedShared.map((r,i)=><GameRow key={i} r={r} editable={false}/>)}</tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
           })()}
 
           {/* ── ADMIN TAB ── */}
@@ -968,6 +1020,12 @@ export default function App() {
       {/* ── GAME MODAL ── */}
       {gameModal !== null && (
         <GameModal data={gameModal.id ? gameModal : null} onClose={()=>setGameModal(null)} onSave={saveGame}/>
+      )}
+
+      {/* ── SHARE GAME MODAL ── */}
+      {shareGameModal !== null && (
+        <ShareGameModal team={shareGameModal.team} rows={shareGameModal.rows}
+          onClose={()=>setShareGameModal(null)} onShare={shareGameToUsers}/>
       )}
 
       {/* ── NOTE POPUP ── */}
@@ -1066,6 +1124,7 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
 function GameModal({ data, onClose, onSave }) {
   const [form, setForm] = useState({
     ngay:      data?.ngay      || todayISO(),
+    tenGame:   data?.tenGame   || "",
     team:      data?.team      || "",
     loaiAcc:   data?.loaiAcc   || "",
     soLuong:   data?.soLuong   || "",
@@ -1097,6 +1156,9 @@ function GameModal({ data, onClose, onSave }) {
                 {GAME_STATUS.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
             </Field>
+            <Field label="Tên Game">
+              <input placeholder="VD: Lord Mobile, ROK..." value={form.tenGame} onChange={e=>set("tenGame",e.target.value)}/>
+            </Field>
             <Field label="Team *">
               <input placeholder="Tên team" value={form.team} onChange={e=>set("team",e.target.value)}/>
             </Field>
@@ -1115,6 +1177,68 @@ function GameModal({ data, onClose, onSave }) {
           <button className="btn-cancel" onClick={onClose}>Hủy</button>
           <button className="btn-save" onClick={handleSave}>
             <Icon name="check" size={13}/>{data?.id?"Lưu Thay Đổi":"Thêm Game"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SHARE GAME MODAL ─────────────────────────────────────────────────────────
+function ShareGameModal({ team, rows, onClose, onShare }) {
+  const [userList, setUserList] = useState([]);
+  const [selected, setSelected] = useState([]);
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      const snap = await getDocs(collection(db, "users"));
+      const users = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (data.email && data.email !== ADMIN_EMAIL)
+          users.push({ uid: d.id, email: data.email, displayName: data.displayName || data.email });
+      });
+      setUserList(users);
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const toggle = uid => setSelected(s => s.includes(uid) ? s.filter(x=>x!==uid) : [...s, uid]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Chia Sẻ — Team {team}</div>
+            <div className="modal-title-sub">{rows.length} game record · chọn user để gửi</div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><Icon name="close" size={15}/></button>
+        </div>
+        <div className="modal-body">
+          {loading ? <div style={{textAlign:"center",padding:"20px",color:"var(--text-dim)"}}>Đang tải...</div> : (
+            userList.length === 0
+              ? <div style={{textAlign:"center",padding:"20px",color:"var(--text-dim)"}}>Không có user nào</div>
+              : <div className="share-user-list">
+                  {userList.map(u=>(
+                    <label key={u.uid} className={`share-user-row${selected.includes(u.uid)?" checked":""}`}>
+                      <input type="checkbox" checked={selected.includes(u.uid)} onChange={()=>toggle(u.uid)}/>
+                      <div className="share-user-avatar">{(u.displayName||u.email)[0].toUpperCase()}</div>
+                      <div className="share-user-info">
+                        <span className="share-user-name">{u.displayName||u.email}</span>
+                        <span className="share-user-email">{u.email}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>Hủy</button>
+          <button className="btn-save" disabled={selected.length===0} onClick={()=>onShare(team,rows,selected)}>
+            <Icon name="check" size={13}/> Gửi cho {selected.length} user
           </button>
         </div>
       </div>
