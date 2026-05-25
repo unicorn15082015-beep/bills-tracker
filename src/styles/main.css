@@ -1555,6 +1555,39 @@ body {
   font-family: var(--mono);
 }
 
+/* Task filter bar (pill style) */
+.task-filter-bar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.task-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border: 1px solid;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: none;
+}
+.task-filter-btn:hover { filter: brightness(1.2); }
+.task-filter-btn.active { filter: brightness(1.15); }
+.tfb-label { white-space: nowrap; }
+.tfb-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-weight: 700;
+}
+
 /* ══════════════════════════════════════════════
    SEARCH + TABLE TOOLBAR
 ══════════════════════════════════════════════ */

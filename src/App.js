@@ -1061,14 +1061,24 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
         </div>
 
         {/* Filter bar */}
-        <div className="chi-filter-bar">
-          {[{key:"all",label:"Tất Cả",count:tasks.length},...STATUS.map(s=>({key:s.key,label:s.label,count:tasks.filter(t=>t.trangThai===s.key).length,color:s.color}))].map(f=>(
+        <div className="task-filter-bar">
+          {[{key:"all",label:"Tất Cả",count:tasks.length,color:null},
+            ...STATUS.map(s=>({key:s.key,label:s.label,count:tasks.filter(t=>t.trangThai===s.key).length,color:s.color}))
+          ].map(f=>(
             <button key={f.key}
-              className={`chi-filter-tab${taskFilter===f.key?" active":""}`}
-              style={taskFilter===f.key&&f.color?{borderBottomColor:f.color,color:f.color}:{}}
+              className={`task-filter-btn${taskFilter===f.key?" active":""}`}
+              style={f.color ? {
+                color: f.color,
+                borderColor: taskFilter===f.key ? f.color : f.color+"55",
+                background: taskFilter===f.key ? f.color+"22" : f.color+"0d",
+              } : {
+                color: taskFilter===f.key ? "var(--text)" : "var(--text-dim)",
+                borderColor: taskFilter===f.key ? "var(--text-mid)" : "var(--border)",
+                background: taskFilter===f.key ? "rgba(255,255,255,0.06)" : "transparent",
+              }}
               onClick={()=>setTaskFilter(f.key)}>
-              <span className="cft-label" style={f.color&&taskFilter!==f.key?{color:f.color}:{}}>{f.label}</span>
-              <span className="cft-sub">{f.count} việc</span>
+              <span className="tfb-label">{f.label}</span>
+              <span className="tfb-count">{f.count}</span>
             </button>
           ))}
         </div>
@@ -1078,11 +1088,11 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
           {filtered.length === 0 ? <EmptyState text="Chưa có việc nào"/> : (
             <table className="data-table">
               <thead><tr>
-                <th style={{width:110}}>Ngày</th>
-                <th>Nhiệm Vụ</th>
-                <th style={{width:120}}>Trạng Thái</th>
+                <th style={{width:95}}>Ngày</th>
+                <th style={{width:200}}>Nhiệm Vụ</th>
+                <th style={{width:130}}>Trạng Thái</th>
                 <th>Ghi Chú</th>
-                <th style={{width:72}}></th>
+                <th style={{width:64}}></th>
               </tr></thead>
               <tbody>
                 {filtered.map(t => {
