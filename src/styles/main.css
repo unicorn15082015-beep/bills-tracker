@@ -2182,23 +2182,39 @@ body {
 .top-games-list::-webkit-scrollbar { width: 4px; }
 .top-games-list::-webkit-scrollbar-track { background: var(--bg3); border-radius: 4px; }
 .top-games-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+.top-games-header-row {
+  display: grid;
+  grid-template-columns: 28px 100px 50px 150px 130px 130px 1fr;
+  gap: 10px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.top-games-header-row span { white-space: nowrap; }
+.top-games-header-row .tgh-vnd  { color: var(--red);    opacity: 0.7; }
+.top-games-header-row .tgh-usd  { color: var(--yellow); opacity: 0.7; }
+.top-games-header-row .tgh-total { color: var(--text-mid); }
 .top-game-row {
   display: grid;
-  grid-template-columns: 28px 90px 52px 1fr auto 120px;
+  grid-template-columns: 28px 100px 50px 150px 130px 130px 1fr;
   align-items: center;
   gap: 10px;
   font-size: 12px;
+  padding: 3px 0;
 }
-.tg-rank { font-weight: 800; font-size: 11px; font-family: var(--mono); text-align: right; }
-.tg-name { font-weight: 700; color: var(--text); }
-.tg-count { font-size: 11px; color: var(--text-dim); font-family: var(--mono); background: var(--bg3); border-radius: 10px; padding: 1px 7px; text-align: center; }
-.tg-amounts { display: flex; gap: 6px; flex-wrap: wrap; }
-.tg-vnd { color: var(--red); font-size: 11px; font-family: var(--mono); }
-.tg-usd { color: var(--yellow); font-size: 11px; font-family: var(--mono); }
+.tg-rank  { font-weight: 800; font-size: 11px; font-family: var(--mono); text-align: right; }
+.tg-name  { font-weight: 700; color: var(--text); }
+.tg-count { font-size: 11px; color: var(--text-dim); font-family: var(--mono); background: var(--bg3); border-radius: 10px; padding: 2px 8px; text-align: center; }
+.tg-vnd   { color: var(--red);    font-size: 12px; font-family: var(--mono); font-weight: 600; text-align: right; white-space: nowrap; }
+.tg-usd   { color: var(--yellow); font-size: 12px; font-family: var(--mono); font-weight: 600; text-align: right; white-space: nowrap; }
 .tg-total { font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--text); text-align: right; white-space: nowrap; }
-.tg-bar-wrap { width: 100%; height: 4px; background: var(--bg3); border-radius: 4px; overflow: hidden; display: none; }
+.tg-bar-wrap { position: relative; height: 6px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
 .tg-bar { height: 100%; background: linear-gradient(90deg, var(--blue), #a78bfa); border-radius: 4px; transition: width 0.4s; }
-@media (min-width: 900px) { .tg-bar-wrap { display: block; } .top-game-row { grid-template-columns: 28px 90px 52px 1fr auto 100px 140px; } }
 
 /* Share game button */
 .btn-share-game {

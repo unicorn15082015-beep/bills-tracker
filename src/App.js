@@ -1601,17 +1601,22 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
               <Icon name="chart" size={13}/> Top Game Chi Nhiều Nhất
             </div>
             <div className="top-games-list">
+              <div className="top-games-header-row">
+                <span/>
+                <span>Game</span>
+                <span style={{textAlign:"center"}}>Acc</span>
+                <span className="tgh-vnd" style={{textAlign:"right"}}>Chi VND</span>
+                <span className="tgh-usd" style={{textAlign:"right"}}>Chi USD</span>
+                <span className="tgh-total" style={{textAlign:"right"}}>Tổng QĐ</span>
+                <span/>
+              </div>
               {topGames.map((g, i) => (
                 <div key={g.name} className="top-game-row">
-                  <span className="tg-rank" style={{color: i===0?"#fbbf24": i===1?"#9ca3af": i===2?"#b87333":"var(--text-dim)"}}>
-                    #{i+1}
-                  </span>
+                  <span className="tg-rank" style={{color: i===0?"#fbbf24": i===1?"#9ca3af": i===2?"#b87333":"var(--text-dim)"}}>#{i+1}</span>
                   <span className="tg-name">{g.name}</span>
-                  <span className="tg-count">{g.count} acc</span>
-                  <div className="tg-amounts">
-                    {g.vnd > 0 && <span className="tg-vnd">{fmtVND(g.vnd)}</span>}
-                    {g.usd > 0 && <span className="tg-usd">{fmtUSD(g.usd)}</span>}
-                  </div>
+                  <span className="tg-count">{g.count}</span>
+                  <span className="tg-vnd">{g.vnd > 0 ? fmtVND(g.vnd) : "—"}</span>
+                  <span className="tg-usd">{g.usd > 0 ? fmtUSD(g.usd) : "—"}</span>
                   <span className="tg-total">{fmtVND(g.total)}</span>
                   <div className="tg-bar-wrap">
                     <div className="tg-bar" style={{width:`${Math.round((g.total/topGames[0].total)*100)}%`}}/>
