@@ -1825,6 +1825,60 @@ body {
 }
 .admin-sort-select:focus { border-color: var(--blue); }
 
+/* Section bar (overview ↔ tasks toggle) */
+.admin-section-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.asb-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.asb-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.asb-tab:hover { border-color: var(--blue); color: var(--blue); }
+.tasks-btn { margin-left: auto; color: var(--blue); border-color: rgba(79,142,247,0.35); background: rgba(79,142,247,0.08); }
+.tasks-btn:hover { background: rgba(79,142,247,0.15); }
+.asb-badge {
+  background: var(--red);
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Task table */
+.task-name-cell { font-size: 13px; font-weight: 600; color: var(--text); }
+.task-completed-row .task-name-cell { text-decoration: line-through; opacity: 0.5; }
+.task-completed-row { opacity: 0.7; }
+.task-status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 6px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
 /* Stats strip */
 .admin-stats-strip {
   display: flex;

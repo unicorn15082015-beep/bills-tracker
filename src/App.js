@@ -931,6 +931,12 @@ function AdminPage({ usdRate }) {
   const [selectedUid, setSelectedUid] = useState(null);
   const [userSort,    setUserSort]   = useState("chi_desc");
   const [detailTab,   setDetailTab]  = useState("chi");
+  const [adminSection, setAdminSection] = useState("overview");
+  // ── Tasks state ──
+  const [tasks,        setTasks]       = useState([]);
+  const [taskFilter,   setTaskFilter]  = useState("all");
+  const [taskModal,    setTaskModal]   = useState(null); // null | {data} | {}
+  const adminUid = auth.currentUser?.uid;
 
   useEffect(() => {
     const load = async () => {
@@ -976,6 +982,27 @@ function AdminPage({ usdRate }) {
     load();
   }, []);
 
+  // Real-time tasks subscription
+  useEffect(() => {
+    if (!adminUid) return;
+    const q = query(collection(db, `users/${adminUid}/tasks`), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, s => setTasks(s.docs.map(d => ({ id: d.id, ...d.data() }))), () => {});
+    return unsub;
+  }, [adminUid]);
+
+  const saveTask = async (data, id) => {
+    if (!adminUid) return;
+    const path = `users/${adminUid}/tasks`;
+    if (id) await updateDoc(doc(db, path, id), { ...data, updatedAt: serverTimestamp() });
+    else     await addDoc(collection(db, path), { ...data, createdAt: serverTimestamp() });
+    setTaskModal(null);
+  };
+
+  const deleteTask = async (id) => {
+    if (!adminUid) return;
+    await deleteDoc(doc(db, `users/${adminUid}/tasks`, id));
+  };
+
   const allChiFlat  = useMemo(() => Object.values(allChi).flat(),  [allChi]);
   const allNhanFlat = useMemo(() => Object.values(allNhan).flat(), [allNhan]);
   const activeFlat  = useMemo(() => allChiFlat.filter(r => !r.cancelled), [allChiFlat]);
@@ -1005,6 +1032,89 @@ function AdminPage({ usdRate }) {
       <div style={{padding:"20px 24px"}}><div className="login-error">{adminError}</div></div>
     </div>
   );
+
+  // ── Tasks section ──
+  if (adminSection === "tasks") {
+    const STATUS = [
+      { key:"processing", label:"Processing", color:"var(--blue)" },
+      { key:"follow",     label:"Follow",     color:"var(--yellow)" },
+      { key:"completed",  label:"Completed",  color:"var(--green)" },
+    ];
+    const statusMeta = k => STATUS.find(s=>s.key===k) || STATUS[0];
+    const filtered = taskFilter === "all" ? tasks : tasks.filter(t=>t.trangThai===taskFilter);
+
+    return (
+      <>
+        {/* Top section bar */}
+        <div className="admin-section-bar">
+          <button className="asb-tab" onClick={()=>setAdminSection("overview")}>← Tổng Quan</button>
+          <span className="asb-title">Việc Cần Làm</span>
+          <button className="btn-add" style={{marginLeft:"auto"}} onClick={()=>setTaskModal({})}>
+            <Icon name="plus" size={13}/> Thêm Mới
+          </button>
+        </div>
+
+        {/* Filter bar */}
+        <div className="chi-filter-bar">
+          {[{key:"all",label:"Tất Cả",count:tasks.length},...STATUS.map(s=>({key:s.key,label:s.label,count:tasks.filter(t=>t.trangThai===s.key).length,color:s.color}))].map(f=>(
+            <button key={f.key}
+              className={`chi-filter-tab${taskFilter===f.key?" active":""}`}
+              style={taskFilter===f.key&&f.color?{borderBottomColor:f.color,color:f.color}:{}}
+              onClick={()=>setTaskFilter(f.key)}>
+              <span className="cft-label" style={f.color&&taskFilter!==f.key?{color:f.color}:{}}>{f.label}</span>
+              <span className="cft-sub">{f.count} việc</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Task list */}
+        <div className="section" style={{borderTop:"none"}}>
+          {filtered.length === 0 ? <EmptyState text="Chưa có việc nào"/> : (
+            <table className="data-table">
+              <thead><tr>
+                <th style={{width:110}}>Ngày</th>
+                <th>Nhiệm Vụ</th>
+                <th style={{width:120}}>Trạng Thái</th>
+                <th>Ghi Chú</th>
+                <th style={{width:72}}></th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(t => {
+                  const sm = statusMeta(t.trangThai);
+                  return (
+                    <tr key={t.id} className={t.trangThai==="completed"?"task-completed-row":""}>
+                      <td className="date-cell">{t.ngay||"—"}</td>
+                      <td className="task-name-cell">{t.nhiemVu}</td>
+                      <td>
+                        <span className="task-status-badge" style={{color:sm.color,borderColor:sm.color+"44",background:sm.color+"18"}}>
+                          {sm.label}
+                        </span>
+                      </td>
+                      <td className="note-cell"><span className="note-text-part">{t.ghiChu}</span></td>
+                      <td className="actions">
+                        <button className="icon-btn" onClick={()=>setTaskModal(t)}><Icon name="edit" size={13}/></button>
+                        <button className="icon-btn danger" onClick={()=>deleteTask(t.id)}><Icon name="trash" size={13}/></button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Task modal */}
+        {taskModal !== null && (
+          <TaskModal
+            data={taskModal.id ? taskModal : null}
+            onClose={()=>setTaskModal(null)}
+            onSave={saveTask}
+            statusList={STATUS}
+          />
+        )}
+      </>
+    );
+  }
 
   // ── helpers ──
   const userStats = (uid) => {
@@ -1227,6 +1337,18 @@ function AdminPage({ usdRate }) {
 
   return (
     <>
+      {/* Top section nav */}
+      <div className="admin-section-bar">
+        <span className="asb-title">Tổng Quan</span>
+        <button className="asb-tab tasks-btn" onClick={()=>setAdminSection("tasks")}>
+          <Icon name="calendar" size={13}/>
+          Việc Cần Làm
+          {tasks.filter(t=>t.trangThai!=="completed").length > 0 && (
+            <span className="asb-badge">{tasks.filter(t=>t.trangThai!=="completed").length}</span>
+          )}
+        </button>
+      </div>
+
       {/* Global stats strip */}
       <div className="admin-stats-strip">
         <div className="ass-item"><span className="ass-label">Tổng Chi VND</span><span className="ass-val red-text">{fmtVND(totChiVND)}</span></div>
@@ -1368,6 +1490,60 @@ function AdminPage({ usdRate }) {
         )}
       </div>
     </>
+  );
+}
+
+// ── TASK MODAL ────────────────────────────────────────────────────────────────
+function TaskModal({ data, onClose, onSave, statusList }) {
+  const [form, setForm] = useState({
+    ngay:      data?.ngay      || todayISO(),
+    nhiemVu:   data?.nhiemVu   || "",
+    trangThai: data?.trangThai || "processing",
+    ghiChu:    data?.ghiChu    || "",
+  });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = () => {
+    if (!form.nhiemVu.trim()) return;
+    onSave(form, data?.id);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">{data?.id ? "Chỉnh Sửa" : "Thêm Mới"} — Việc Cần Làm</div>
+            <div className="modal-title-sub">Quản lý nhiệm vụ và công việc</div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><Icon name="close" size={15}/></button>
+        </div>
+        <div className="modal-body">
+          <div className="fields-row">
+            <Field label="Ngày">
+              <input type="date" value={form.ngay} onChange={e => set("ngay", e.target.value)}/>
+            </Field>
+            <Field label="Trạng Thái">
+              <select value={form.trangThai} onChange={e => set("trangThai", e.target.value)}>
+                {statusList.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="Nhiệm Vụ">
+            <input value={form.nhiemVu} onChange={e => set("nhiemVu", e.target.value)}
+              placeholder="Nhập nội dung nhiệm vụ..." autoFocus/>
+          </Field>
+          <Field label="Ghi Chú">
+            <input value={form.ghiChu} onChange={e => set("ghiChu", e.target.value)}
+              placeholder="Ghi chú thêm (tuỳ chọn)..."/>
+          </Field>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>Hủy</button>
+          <button className="btn-save" onClick={handleSave}><Icon name="check" size={14}/> Lưu</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
