@@ -5,7 +5,6 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
 import "./styles/main.css";
 
 // ── ICONS ──────────────────────────────────────────────────────────────────────
@@ -984,7 +983,6 @@ function AdminPage({ usdRate }) {
   const totNhanVND = useMemo(() => allNhanFlat.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0), [allNhanFlat]);
   const totNhanUSD = useMemo(() => allNhanFlat.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [allNhanFlat]);
   const conVND = totNhanVND - totChiVND;
-  const conUSD = totNhanUSD - totChiUSD;
 
   const topGames = useMemo(() => {
     const stats = {};
