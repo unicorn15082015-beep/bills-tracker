@@ -1549,8 +1549,7 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
     });
     const topGames = Object.entries(gameStats)
       .map(([name, s]) => ({ name, ...s, total: s.vnd + s.usd * usdRate }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
+      .sort((a, b) => b.total - a.total);
 
     return (
       <>

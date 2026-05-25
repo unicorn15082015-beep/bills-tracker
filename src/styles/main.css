@@ -2178,7 +2178,10 @@ body {
   color: var(--text-dim);
   margin-bottom: 12px;
 }
-.top-games-list { display: flex; flex-direction: column; gap: 7px; }
+.top-games-list { display: flex; flex-direction: column; gap: 7px; max-height: 185px; overflow-y: auto; padding-right: 4px; }
+.top-games-list::-webkit-scrollbar { width: 4px; }
+.top-games-list::-webkit-scrollbar-track { background: var(--bg3); border-radius: 4px; }
+.top-games-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 .top-game-row {
   display: grid;
   grid-template-columns: 28px 90px 52px 1fr auto 120px;
