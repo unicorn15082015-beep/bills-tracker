@@ -1092,9 +1092,14 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
                       <td className="date-cell">{t.ngay||"—"}</td>
                       <td className="task-name-cell">{t.nhiemVu}</td>
                       <td>
-                        <span className="task-status-badge" style={{color:sm.color,borderColor:sm.color+"44",background:sm.color+"18"}}>
-                          {sm.label}
-                        </span>
+                        <select
+                          className="task-status-select"
+                          value={t.trangThai||"processing"}
+                          style={{color:sm.color,borderColor:sm.color+"66",background:sm.color+"18"}}
+                          onChange={e => saveTask({...t, trangThai:e.target.value}, t.id)}
+                        >
+                          {STATUS.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
+                        </select>
                       </td>
                       <td className="note-cell"><span className="note-text-part">{t.ghiChu}</span></td>
                       <td className="actions">
