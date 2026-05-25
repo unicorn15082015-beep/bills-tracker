@@ -41,7 +41,7 @@ const Icon = ({ name, size = 16 }) => {
   return icons[name] || null;
 };
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
+// ── HELPERS ──────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = "lengocthang.mb@gmail.com";
 const DEFAULT_USD_RATE = 25400;
 const fmtVND = (n) => new Intl.NumberFormat("vi-VN").format(Math.round(n || 0)) + " đ";
@@ -145,6 +145,7 @@ export default function App() {
   const [loading, setLoading]     = useState(true);
   const [toasts, setToasts]       = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [adminSection, setAdminSection] = useState("overview");
 
   const [usdRate, setUsdRate] = useState(() => {
     const saved = localStorage.getItem("usdRate");
@@ -416,11 +417,18 @@ export default function App() {
             </button>
           ))}
           {isAdmin && (
-            <button className={`nav-btn ${tab==="admin"?"active":""}`}
-              onClick={() => { setTab("admin"); setSidebarOpen(false); }}>
-              <span className="nav-icon"><Icon name="shield" size={16}/></span>
-              Admin
-            </button>
+            <>
+              <button className={`nav-btn ${tab==="admin" && adminSection==="overview"?"active":""}`}
+                onClick={() => { setTab("admin"); setAdminSection("overview"); setSidebarOpen(false); }}>
+                <span className="nav-icon"><Icon name="shield" size={16}/></span>
+                Admin
+              </button>
+              <button className={`nav-btn ${tab==="admin" && adminSection==="tasks"?"active":""}`}
+                onClick={() => { setTab("admin"); setAdminSection("tasks"); setSidebarOpen(false); }}>
+                <span className="nav-icon"><Icon name="calendar" size={16}/></span>
+                Việc Cần Làm
+              </button>
+            </>
           )}
         </nav>
 
@@ -834,7 +842,7 @@ export default function App() {
 
           {/* ── ADMIN TAB ── */}
           {tab==="admin" && isAdmin && (
-            <AdminPage usdRate={usdRate} />
+            <AdminPage usdRate={usdRate} adminSection={adminSection} setAdminSection={setAdminSection} />
           )}
         </div>
       </div>
@@ -920,7 +928,7 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
 
 // ── ADMIN PAGE ────────────────────────────────────────────────────────────────
 
-function AdminPage({ usdRate }) {
+function AdminPage({ usdRate, adminSection, setAdminSection }) {
   const [userList,    setUserList]   = useState([]);
   const [allChi,      setAllChi]     = useState({});
   const [allNhan,     setAllNhan]    = useState({});
@@ -931,7 +939,6 @@ function AdminPage({ usdRate }) {
   const [selectedUid, setSelectedUid] = useState(null);
   const [userSort,    setUserSort]   = useState("chi_desc");
   const [detailTab,   setDetailTab]  = useState("chi");
-  const [adminSection, setAdminSection] = useState("overview");
   // ── Tasks state ──
   const [tasks,        setTasks]       = useState([]);
   const [taskFilter,   setTaskFilter]  = useState("all");
@@ -1047,7 +1054,6 @@ function AdminPage({ usdRate }) {
       <>
         {/* Top section bar */}
         <div className="admin-section-bar">
-          <button className="asb-tab" onClick={()=>setAdminSection("overview")}>← Tổng Quan</button>
           <span className="asb-title">Việc Cần Làm</span>
           <button className="btn-add" style={{marginLeft:"auto"}} onClick={()=>setTaskModal({})}>
             <Icon name="plus" size={13}/> Thêm Mới
@@ -1340,13 +1346,6 @@ function AdminPage({ usdRate }) {
       {/* Top section nav */}
       <div className="admin-section-bar">
         <span className="asb-title">Tổng Quan</span>
-        <button className="asb-tab tasks-btn" onClick={()=>setAdminSection("tasks")}>
-          <Icon name="calendar" size={13}/>
-          Việc Cần Làm
-          {tasks.filter(t=>t.trangThai!=="completed").length > 0 && (
-            <span className="asb-badge">{tasks.filter(t=>t.trangThai!=="completed").length}</span>
-          )}
-        </button>
       </div>
 
       {/* Global stats strip */}
