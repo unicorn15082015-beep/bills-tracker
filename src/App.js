@@ -1538,6 +1538,20 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
       staffUser[name].count++;
     });
 
+    // Top games by total spending
+    const gameStats = {};
+    act.forEach(r => {
+      const game = extractGame(r.account);
+      if (!gameStats[game]) gameStats[game] = { vnd:0, usd:0, count:0 };
+      if (r.currency==="VND") gameStats[game].vnd += r.soTien||0;
+      else gameStats[game].usd += r.soTien||0;
+      gameStats[game].count++;
+    });
+    const topGames = Object.entries(gameStats)
+      .map(([name, s]) => ({ name, ...s, total: s.vnd + s.usd * usdRate }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+
     return (
       <>
         {/* Breadcrumb bar */}
@@ -1580,6 +1594,34 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
           <div className="ass-sep"/>
           <div className="ass-item"><span className="ass-label">Mid Hold</span><span className="ass-val" style={{color:"#fb923c"}}>{mid}</span></div>
         </div>
+
+        {/* Top Games */}
+        {topGames.length > 0 && (
+          <div className="top-games-section">
+            <div className="top-games-header">
+              <Icon name="chart" size={13}/> Top Game Chi Nhiều Nhất
+            </div>
+            <div className="top-games-list">
+              {topGames.map((g, i) => (
+                <div key={g.name} className="top-game-row">
+                  <span className="tg-rank" style={{color: i===0?"#fbbf24": i===1?"#9ca3af": i===2?"#b87333":"var(--text-dim)"}}>
+                    #{i+1}
+                  </span>
+                  <span className="tg-name">{g.name}</span>
+                  <span className="tg-count">{g.count} acc</span>
+                  <div className="tg-amounts">
+                    {g.vnd > 0 && <span className="tg-vnd">{fmtVND(g.vnd)}</span>}
+                    {g.usd > 0 && <span className="tg-usd">{fmtUSD(g.usd)}</span>}
+                  </div>
+                  <span className="tg-total">{fmtVND(g.total)}</span>
+                  <div className="tg-bar-wrap">
+                    <div className="tg-bar" style={{width:`${Math.round((g.total/topGames[0].total)*100)}%`}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Internal tab bar */}
         <div className="admin-detail-tabs">
