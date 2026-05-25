@@ -174,6 +174,7 @@ export default function App() {
     return onAuthStateChanged(auth, async u => {
       setUser(u);
       setAuthLoading(false);
+      if (u?.email === ADMIN_EMAIL) setTab("admin");
       if (u) {
         const profile = {
           email: u.email,
@@ -407,7 +408,7 @@ export default function App() {
 
         <nav className="sidebar-nav">
           <div className="nav-label">Menu</div>
-          {TABS.map(t => (
+          {!isAdmin && TABS.map(t => (
             <button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`}
               onClick={() => { setTab(t.id); setSidebarOpen(false); }}>
               <span className="nav-icon"><Icon name={t.icon} size={16}/></span>
