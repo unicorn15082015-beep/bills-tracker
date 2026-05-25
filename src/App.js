@@ -118,14 +118,22 @@ const TABS = [
   { id: "chi",       label: "Chi",         icon: "arrow_down" },
   { id: "nhan",      label: "Nhập Quỹ",    icon: "arrow_up" },
   { id: "staff",     label: "Nhân Viên",   icon: "user" },
+  { id: "game",      label: "Game",         icon: "grid" },
 ];
 const PAGE_TITLES = {
   dashboard: "Tổng Quan",
   chi:       "Danh Sách Chi",
   nhan:      "Nhập Quỹ",
   staff:     "Nhân Viên",
+  game:      "Game",
   admin:     "Admin — Hệ Thống",
 };
+
+const GAME_STATUS = [
+  { key: "follow",      label: "Follow",      color: "var(--yellow)" },
+  { key: "completed",   label: "Completed",   color: "var(--green)"  },
+  { key: "closed",      label: "Closed Game", color: "#9ca3af"       },
+];
 
 // Bar colors for game chart
 const GAME_COLORS = [
@@ -170,6 +178,12 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
 
+  // ── Game state ──
+  const [gameRows,   setGameRows]   = useState([]);
+  const [gameModal,  setGameModal]  = useState(null);
+  const [gameTeam,   setGameTeam]   = useState("all");
+  const [notePopup,  setNotePopup]  = useState(null);
+
   // ── Auth — write user profile to users/{uid} doc so admin can list all users ──
   useEffect(() => {
     return onAuthStateChanged(auth, async u => {
@@ -209,9 +223,11 @@ export default function App() {
       const uid = user.uid;
       const qChi  = query(collection(db, `users/${uid}/chi`),  orderBy("createdAt","desc"));
       const qNhan = query(collection(db, `users/${uid}/nhan`), orderBy("createdAt","desc"));
+      const qGame = query(collection(db, `users/${uid}/games`), orderBy("createdAt","desc"));
       const u1 = onSnapshot(qChi,  s => { setChiRows(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); });
       const u2 = onSnapshot(qNhan, s => setNhanRows(s.docs.map(d=>({id:d.id,...d.data()}))));
-      return () => { u1(); u2(); u3(); };
+      const u4 = onSnapshot(qGame, s => setGameRows(s.docs.map(d=>({id:d.id,...d.data()}))));
+      return () => { u1(); u2(); u3(); u4(); };
     } else {
       // Admin: load ALL users' chi/nhan combined so dashboard shows full picture
       const loadAll = async () => {
@@ -383,6 +399,23 @@ export default function App() {
         }
         setConfirm(null);
       },
+    });
+  };
+
+  // ── Game CRUD ──
+  const saveGame = async (data, id) => {
+    try {
+      const path = `users/${user.uid}/games`;
+      if (id) await updateDoc(doc(db, path, id), { ...data, updatedAt: serverTimestamp() });
+      else    await addDoc(collection(db, path), { ...data, createdAt: serverTimestamp() });
+      setGameModal(null);
+      pushToast(id ? "Đã cập nhật game" : "Đã thêm game mới");
+    } catch (e) { pushToast("Lỗi: " + e.message, "error"); }
+  };
+  const deleteGame = (id) => {
+    setConfirm({
+      title: "Xác nhận xóa", message: "Xóa game này? Thao tác không thể hoàn tác.",
+      onConfirm: async () => { await deleteDoc(doc(db, `users/${user.uid}/games`, id)); setConfirm(null); pushToast("Đã xóa"); },
     });
   };
 
@@ -840,12 +873,107 @@ export default function App() {
             </div>
           )}
 
+          {/* ── GAME TAB ── */}
+          {tab==="game" && !isAdmin && (() => {
+            const teams = ["all", ...Array.from(new Set(gameRows.map(r=>r.team).filter(Boolean)))];
+            const displayed = gameTeam==="all" ? gameRows : gameRows.filter(r=>r.team===gameTeam);
+            const smG = k => GAME_STATUS.find(s=>s.key===k) || GAME_STATUS[0];
+            return (
+              <div className="game-page">
+                {/* Team filter */}
+                <div className="game-team-bar">
+                  {teams.map(t=>(
+                    <button key={t}
+                      className={`game-team-btn${gameTeam===t?" active":""}`}
+                      onClick={()=>setGameTeam(t)}>
+                      {t==="all"?"Tất Cả":t}
+                    </button>
+                  ))}
+                  <button className="btn-add" style={{marginLeft:"auto"}} onClick={()=>setGameModal({})}>
+                    <Icon name="plus" size={13}/> Thêm Game
+                  </button>
+                </div>
+
+                {/* Table */}
+                <div className="section" style={{borderTop:"none"}}>
+                  {displayed.length===0 ? <EmptyState text="Chưa có game nào"/> : (
+                    <div style={{overflowX:"auto"}}>
+                      <table className="data-table game-table">
+                        <thead><tr>
+                          <th style={{width:95}}>Ngày</th>
+                          <th style={{width:110}}>Team</th>
+                          <th>Loại Acc</th>
+                          <th style={{width:80}}>Số Lượng</th>
+                          <th style={{width:130}}>Trạng Thái</th>
+                          <th style={{width:60}}>Ghi Chú</th>
+                          <th style={{width:64}}></th>
+                        </tr></thead>
+                        <tbody>
+                          {displayed.map(r=>{
+                            const sm = smG(r.trangThai);
+                            return (
+                              <tr key={r.id} className={r.trangThai==="closed"?"game-row-closed":""}>
+                                <td className="date-cell">{r.ngay||"—"}</td>
+                                <td><span className="game-team-badge">{r.team||"—"}</span></td>
+                                <td className="game-loaiacc-cell">{r.loaiAcc||"—"}</td>
+                                <td style={{textAlign:"center",fontFamily:"var(--mono)",fontWeight:700}}>{r.soLuong||0}</td>
+                                <td>
+                                  <select
+                                    className="task-status-select"
+                                    value={r.trangThai||"follow"}
+                                    style={{color:sm.color,borderColor:sm.color+"66",background:sm.color+"18"}}
+                                    onChange={e=>saveGame({...r,trangThai:e.target.value},r.id)}
+                                  >
+                                    {GAME_STATUS.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
+                                  </select>
+                                </td>
+                                <td style={{textAlign:"center"}}>
+                                  {r.ghiChu ? (
+                                    <button className="note-popup-btn" onClick={()=>setNotePopup(r)}>
+                                      <Icon name="eye" size={13}/>
+                                    </button>
+                                  ) : <span style={{color:"var(--text-dim)"}}>—</span>}
+                                </td>
+                                <td className="actions">
+                                  <button className="icon-btn" onClick={()=>setGameModal(r)}><Icon name="edit" size={13}/></button>
+                                  <button className="icon-btn danger" onClick={()=>deleteGame(r.id)}><Icon name="trash" size={13}/></button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* ── ADMIN TAB ── */}
           {tab==="admin" && isAdmin && (
             <AdminPage usdRate={usdRate} adminSection={adminSection} setAdminSection={setAdminSection} />
           )}
         </div>
       </div>
+
+      {/* ── GAME MODAL ── */}
+      {gameModal !== null && (
+        <GameModal data={gameModal.id ? gameModal : null} onClose={()=>setGameModal(null)} onSave={saveGame}/>
+      )}
+
+      {/* ── NOTE POPUP ── */}
+      {notePopup && (
+        <div className="modal-overlay" onClick={()=>setNotePopup(null)}>
+          <div className="note-popup-card" onClick={e=>e.stopPropagation()}>
+            <div className="note-popup-header">
+              <span>Ghi Chú — {notePopup.loaiAcc||notePopup.team||""}</span>
+              <button className="icon-btn" onClick={()=>setNotePopup(null)}><Icon name="close" size={14}/></button>
+            </div>
+            <div className="note-popup-body">{notePopup.ghiChu}</div>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL ── */}
       {modal && (
@@ -920,6 +1048,66 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
         <div className="confirm-actions">
           <button className="btn-cancel" onClick={onCancel}>Hủy</button>
           <button className="btn-danger" onClick={onConfirm}>Xóa</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── GAME MODAL ────────────────────────────────────────────────────────────────
+function GameModal({ data, onClose, onSave }) {
+  const [form, setForm] = useState({
+    ngay:      data?.ngay      || todayISO(),
+    team:      data?.team      || "",
+    loaiAcc:   data?.loaiAcc   || "",
+    soLuong:   data?.soLuong   || "",
+    trangThai: data?.trangThai || "follow",
+    ghiChu:    data?.ghiChu    || "",
+  });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const handleSave = () => {
+    if (!form.team.trim()) return;
+    onSave({ ...form, soLuong: Number(form.soLuong)||0 }, data?.id);
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">{data?.id?"Chỉnh Sửa":"Thêm Mới"} — Game</div>
+            <div className="modal-title-sub">Quản lý tài khoản game</div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><Icon name="close" size={15}/></button>
+        </div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <Field label="Ngày">
+              <input type="date" value={form.ngay} onChange={e=>set("ngay",e.target.value)}/>
+            </Field>
+            <Field label="Trạng Thái">
+              <select value={form.trangThai} onChange={e=>set("trangThai",e.target.value)}>
+                {GAME_STATUS.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Team *">
+              <input placeholder="Tên team" value={form.team} onChange={e=>set("team",e.target.value)}/>
+            </Field>
+            <Field label="Số Lượng Acc">
+              <input type="number" min="0" placeholder="0" value={form.soLuong} onChange={e=>set("soLuong",e.target.value)}/>
+            </Field>
+          </div>
+          <Field label="Loại Acc">
+            <input placeholder="VD: Nick lv5, Acc mới..." value={form.loaiAcc} onChange={e=>set("loaiAcc",e.target.value)}/>
+          </Field>
+          <Field label="Ghi Chú">
+            <textarea rows={3} placeholder="Ghi chú thêm..." value={form.ghiChu} onChange={e=>set("ghiChu",e.target.value)}/>
+          </Field>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>Hủy</button>
+          <button className="btn-save" onClick={handleSave}>
+            <Icon name="check" size={13}/>{data?.id?"Lưu Thay Đổi":"Thêm Game"}
+          </button>
         </div>
       </div>
     </div>
