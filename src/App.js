@@ -921,13 +921,14 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
 // ── ADMIN PAGE ────────────────────────────────────────────────────────────────
 
 function AdminPage({ usdRate }) {
-  const [userList,   setUserList]   = useState([]);
-  const [allChi,     setAllChi]     = useState({});
-  const [allNhan,    setAllNhan]    = useState({});
-  const [adminLoad,  setAdminLoad]  = useState(true);
-  const [adminError, setAdminError] = useState(null);
-  const [editingUid, setEditingUid] = useState(null);
-  const [nameDraft,  setNameDraft]  = useState("");
+  const [userList,    setUserList]   = useState([]);
+  const [allChi,      setAllChi]     = useState({});
+  const [allNhan,     setAllNhan]    = useState({});
+  const [adminLoad,   setAdminLoad]  = useState(true);
+  const [adminError,  setAdminError] = useState(null);
+  const [editingUid,  setEditingUid] = useState(null);
+  const [nameDraft,   setNameDraft]  = useState("");
+  const [selectedUid, setSelectedUid] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -998,162 +999,305 @@ function AdminPage({ usdRate }) {
   }, [activeFlat]);
 
   if (adminLoad) return <div className="loading"><div className="spinner"/>Đang tải dữ liệu admin...</div>;
-
   if (adminError) return (
     <div className="section">
       <div className="section-header"><span className="section-title">Lỗi Kết Nối Admin</span></div>
-      <div style={{padding:"20px 24px"}}>
-        <div className="login-error">{adminError}</div>
-      </div>
+      <div style={{padding:"20px 24px"}}><div className="login-error">{adminError}</div></div>
     </div>
   );
+
+  // ── User detail drill-down ──
+  if (selectedUid) {
+    const u    = userList.find(x => x.uid === selectedUid) || {};
+    const chi  = allChi[selectedUid]  || [];
+    const nhan = allNhan[selectedUid] || [];
+    const act  = chi.filter(r => !r.cancelled);
+    const cVND = act.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+    const cUSD = act.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+    const nVND = nhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+    const nUSD = nhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+    const bal  = (nVND - cVND) + (nUSD - cUSD) * usdRate;
+    const hoan = chi.filter(r=>r.cancelled).length;
+    const mid  = chi.filter(r=>r.midHold&&!r.cancelled).length;
+    const label = u.displayName || u.email || selectedUid;
+
+    return (
+      <>
+        {/* Back bar */}
+        <div className="admin-detail-bar">
+          <button className="admin-back-btn" onClick={() => setSelectedUid(null)}>
+            ← Quay Lại
+          </button>
+          <span className="admin-detail-title">{label}</span>
+          <span style={{fontSize:11,color:"var(--text-dim)"}}>{u.email}</span>
+        </div>
+
+        {/* User summary cards */}
+        <div className="summary-row">
+          <div className="sum-card red">
+            <div className="sum-card-header"><div className="sum-label">Tổng Chi</div><div className="sum-card-icon"><Icon name="arrow_down" size={17}/></div></div>
+            <div className="sum-value">{fmtVND(cVND)}</div>
+            <div className="sum-sub">USD: {fmtUSD(cUSD)}</div>
+          </div>
+          <div className="sum-card green">
+            <div className="sum-card-header"><div className="sum-label">Tổng Nhập</div><div className="sum-card-icon"><Icon name="arrow_up" size={17}/></div></div>
+            <div className="sum-value">{fmtVND(nVND)}</div>
+            <div className="sum-sub">USD: {fmtUSD(nUSD)}</div>
+          </div>
+          <div className={`sum-card ${bal>=0?"blue":"red"}`}>
+            <div className="sum-card-header"><div className="sum-label">Còn Lại</div><div className="sum-card-icon"><Icon name="wallet" size={17}/></div></div>
+            <div className="sum-value">{fmtVND(bal)}</div>
+            <div className="sum-sub">{act.length} giao dịch · {hoan} hoàn · {mid} mid</div>
+          </div>
+        </div>
+
+        {/* Chi table */}
+        <div className="section">
+          <div className="section-header">
+            <span className="section-title">Danh Sách Chi <span className="badge purple">{chi.length}</span></span>
+          </div>
+          {chi.length === 0 ? <EmptyState text="Chưa có giao dịch chi"/> : (
+            <div style={{overflowX:"auto"}}>
+              <table className="data-table">
+                <thead><tr>
+                  <th>Ngày</th><th>Account</th>
+                  <th style={{textAlign:"right"}}>VND</th>
+                  <th style={{textAlign:"right"}}>USD</th>
+                  <th>Người Mua</th><th>Proof</th><th>Ghi Chú</th><th>Trạng Thái</th>
+                </tr></thead>
+                <tbody>
+                  {[...chi].sort((a,b)=>getRowDate(b)-getRowDate(a)).map(r => (
+                    <tr key={r.id} className={r.cancelled?"cancelled":""}>
+                      <td className="date-cell">{fmtDate(r)}</td>
+                      <td><span className="acc-name">{r.account}</span></td>
+                      <td className="num red-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
+                      <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
+                      <td><span className="badge blue">{r.nguoiMua}</span></td>
+                      <td className="proof-cell">
+                        {r.proof
+                          ? <a href={r.proof} target="_blank" rel="noopener noreferrer" className="note-link-badge">Link ↗</a>
+                          : renderNote(r.ghiChu)}
+                      </td>
+                      <td className="note-cell">
+                        <span className="note-text-part">
+                          {r.proof ? r.ghiChu : (r.ghiChu||"").replace(/(https?:\/\/[^\s]+)/g,"").trim()}
+                        </span>
+                      </td>
+                      <td className="status-cell">
+                        {r.cancelled && <span className="badge red">Hoàn</span>}
+                        {r.midHold   && <span className="badge orange">Mid</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Nhan table */}
+        <div className="section">
+          <div className="section-header">
+            <span className="section-title">Nhập Quỹ <span className="badge green">{nhan.length}</span></span>
+          </div>
+          {nhan.length === 0 ? <EmptyState text="Chưa có nhập quỹ"/> : (
+            <div style={{overflowX:"auto"}}>
+              <table className="data-table">
+                <thead><tr>
+                  <th>Ngày</th><th>Loại</th>
+                  <th style={{textAlign:"right"}}>VND</th>
+                  <th style={{textAlign:"right"}}>USD</th>
+                  <th>Người Chuyển</th><th>Ghi Chú</th>
+                </tr></thead>
+                <tbody>
+                  {[...nhan].sort((a,b)=>getRowDate(b)-getRowDate(a)).map(r => (
+                    <tr key={r.id}>
+                      <td className="date-cell">{fmtDate(r)}</td>
+                      <td><span className={`badge ${r.currency==="USD"?"yellow":"green"}`}>{r.currency}</span></td>
+                      <td className="num green-text">{r.currency==="VND"?fmtVND(r.soTien):"—"}</td>
+                      <td className="num yellow-text">{r.currency==="USD"?fmtUSD(r.soTien):"—"}</td>
+                      <td><span className="badge green">{r.nguoiChuyen}</span></td>
+                      <td className="note-cell"><span className="note-text-part">{r.ghiChu}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // ── Overview ──
+  const hoанAll = allChiFlat.filter(r=>r.cancelled).length;
+  const midAll  = allChiFlat.filter(r=>r.midHold&&!r.cancelled).length;
+  const staffAll = {};
+  activeFlat.forEach(r => {
+    const name = normalizeName(r.nguoiMua);
+    if (!staffAll[name]) staffAll[name] = { vnd:0, usd:0, count:0 };
+    if (r.currency==="VND") staffAll[name].vnd += r.soTien||0;
+    else staffAll[name].usd += r.soTien||0;
+    staffAll[name].count++;
+  });
 
   return (
     <>
       {/* Global summary */}
       <div className="summary-row">
         <div className="sum-card red">
-          <div className="sum-card-header">
-            <div className="sum-label">Tổng Chi · All Users</div>
-            <div className="sum-card-icon"><Icon name="arrow_down" size={17}/></div>
-          </div>
+          <div className="sum-card-header"><div className="sum-label">Tổng Chi · All Users</div><div className="sum-card-icon"><Icon name="arrow_down" size={17}/></div></div>
           <div className="sum-value">{fmtVND(totChiVND)}</div>
           <div className="sum-sub">USD: {fmtUSD(totChiUSD)}</div>
         </div>
         <div className="sum-card green">
-          <div className="sum-card-header">
-            <div className="sum-label">Tổng Nhập · All Users</div>
-            <div className="sum-card-icon"><Icon name="arrow_up" size={17}/></div>
-          </div>
+          <div className="sum-card-header"><div className="sum-label">Tổng Nhập · All Users</div><div className="sum-card-icon"><Icon name="arrow_up" size={17}/></div></div>
           <div className="sum-value">{fmtVND(totNhanVND)}</div>
           <div className="sum-sub">USD: {fmtUSD(totNhanUSD)}</div>
         </div>
         <div className={`sum-card ${conVND>=0?"blue":"red"}`}>
-          <div className="sum-card-header">
-            <div className="sum-label">Còn Lại · Tổng</div>
-            <div className="sum-card-icon"><Icon name="wallet" size={17}/></div>
-          </div>
+          <div className="sum-card-header"><div className="sum-label">Còn Lại · Tổng</div><div className="sum-card-icon"><Icon name="wallet" size={17}/></div></div>
           <div className="sum-value">{fmtVND(conVND)}</div>
-          <div className={`sum-sub ${conUSD>=0?"pos":"neg"}`}>USD: {fmtUSD(conUSD)}</div>
+          <div className="sum-sub">{hoанAll} hoàn · {midAll} mid hold</div>
         </div>
       </div>
 
-      {/* Per-user breakdown */}
+      {/* User cards — click to drill down */}
       <div className="section">
         <div className="section-header">
-          <span className="section-title">
-            Chi Tiết Từng User &nbsp;
-            <span className="badge purple">{userList.length} users</span>
-          </span>
-          <span style={{fontSize:11,color:"var(--text-dim)"}}>Tất cả thời gian</span>
+          <span className="section-title">Tất Cả Users <span className="badge purple">{userList.length}</span></span>
+          <span style={{fontSize:11,color:"var(--text-dim)"}}>Click vào user để xem chi tiết</span>
         </div>
         {userList.length === 0 ? <EmptyState text="Chưa có dữ liệu"/> : (
-          <div style={{overflowX:"auto"}}>
-            <table className="data-table">
-              <thead><tr>
-                <th>Tên / Email</th>
-                <th>Lần Cuối</th>
-                <th style={{textAlign:"right"}}>Giao Dịch</th>
-                <th style={{textAlign:"right"}}>Chi VND</th>
-                <th style={{textAlign:"right"}}>Chi USD</th>
-                <th style={{textAlign:"right"}}>Nhập VND</th>
-                <th style={{textAlign:"right"}}>Còn Lại</th>
-              </tr></thead>
-              <tbody>
-                {userList.map(u => {
-                  const chi  = allChi[u.uid]  || [];
-                  const nhan = allNhan[u.uid] || [];
-                  const act  = chi.filter(r=>!r.cancelled);
-                  const cVND = act.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
-                  const cUSD = act.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
-                  const nVND = nhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
-                  const nUSD = nhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
-                  const bal  = (nVND - cVND) + (nUSD - cUSD) * usdRate;
-                  const seen = u.lastSeen?.toDate
-                    ? u.lastSeen.toDate().toLocaleDateString("vi-VN")
-                    : "—";
-                  const displayLabel = u.displayName || u.email;
-                  const isEditing = editingUid === u.uid;
+          <div className="admin-user-grid">
+            {userList.map(u => {
+              const chi  = allChi[u.uid]  || [];
+              const nhan = allNhan[u.uid] || [];
+              const act  = chi.filter(r=>!r.cancelled);
+              const cVND = act.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+              const cUSD = act.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+              const nVND = nhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+              const nUSD = nhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+              const bal  = (nVND - cVND) + (nUSD - cUSD) * usdRate;
+              const hoan = chi.filter(r=>r.cancelled).length;
+              const mid  = chi.filter(r=>r.midHold&&!r.cancelled).length;
+              const label = u.displayName || u.email || u.uid;
+              const isEditing = editingUid === u.uid;
 
-                  const saveDisplayName = async () => {
-                    const name = nameDraft.trim();
-                    if (name) {
-                      await setDoc(doc(db, "users", u.uid), { displayName: name }, { merge: true });
-                      setUserList(prev => prev.map(x => x.uid === u.uid ? { ...x, displayName: name } : x));
-                    }
-                    setEditingUid(null);
-                  };
+              const saveDisplayName = async () => {
+                const name = nameDraft.trim();
+                if (name) {
+                  await setDoc(doc(db, "users", u.uid), { displayName: name }, { merge: true });
+                  setUserList(prev => prev.map(x => x.uid === u.uid ? { ...x, displayName: name } : x));
+                }
+                setEditingUid(null);
+              };
 
-                  return (
-                    <tr key={u.uid}>
-                      <td>
-                        {isEditing ? (
-                          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                            <input
-                              value={nameDraft}
-                              onChange={e => setNameDraft(e.target.value)}
-                              onKeyDown={e => { if(e.key==="Enter") saveDisplayName(); if(e.key==="Escape") setEditingUid(null); }}
-                              autoFocus
-                              style={{background:"var(--bg3)",border:"1px solid var(--blue)",borderRadius:6,padding:"4px 8px",color:"var(--text)",fontSize:12,outline:"none",width:160}}
-                            />
-                            <button onClick={saveDisplayName} className="icon-btn" style={{color:"var(--green)"}}><Icon name="check" size={12}/></button>
-                            <button onClick={() => setEditingUid(null)} className="icon-btn"><Icon name="close" size={12}/></button>
-                          </div>
-                        ) : (
-                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                            <span className="badge blue">{displayLabel}</span>
-                            {u.displayName && <span style={{fontSize:10,color:"var(--text-dim)"}}>{u.email}</span>}
-                            <button
-                              className="icon-btn"
-                              title="Đặt tên hiển thị"
-                              onClick={() => { setEditingUid(u.uid); setNameDraft(u.displayName || ""); }}
-                            ><Icon name="edit" size={11}/></button>
-                          </div>
-                        )}
-                      </td>
-                      <td className="date-cell">{seen}</td>
-                      <td className="num">{chi.length}</td>
-                      <td className="num red-text">{fmtVND(cVND)}</td>
-                      <td className="num yellow-text">{fmtUSD(cUSD)}</td>
-                      <td className="num green-text">{fmtVND(nVND)}</td>
-                      <td className={`num ${bal>=0?"green-text":"red-text"}`}>{fmtVND(bal)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              return (
+                <div key={u.uid} className="admin-user-card" onClick={() => !isEditing && setSelectedUid(u.uid)}>
+                  <div className="auc-header">
+                    {isEditing ? (
+                      <div style={{display:"flex",gap:6,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+                        <input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}
+                          onKeyDown={e=>{if(e.key==="Enter")saveDisplayName();if(e.key==="Escape")setEditingUid(null);}}
+                          autoFocus className="auc-name-input"/>
+                        <button onClick={saveDisplayName} className="icon-btn" style={{color:"var(--green)"}}><Icon name="check" size={12}/></button>
+                        <button onClick={()=>setEditingUid(null)} className="icon-btn"><Icon name="close" size={12}/></button>
+                      </div>
+                    ) : (
+                      <div style={{display:"flex",gap:6,alignItems:"center",minWidth:0}}>
+                        <span className="auc-name">{label}</span>
+                        <button className="icon-btn" title="Đổi tên" onClick={e=>{e.stopPropagation();setEditingUid(u.uid);setNameDraft(u.displayName||"");}}><Icon name="edit" size={11}/></button>
+                      </div>
+                    )}
+                    <div className="auc-badges">
+                      {hoan>0 && <span className="badge red">{hoan} hoàn</span>}
+                      {mid>0  && <span className="badge orange">{mid} mid</span>}
+                    </div>
+                  </div>
+                  {u.displayName && <div className="auc-email">{u.email}</div>}
+                  <div className="auc-stats">
+                    <div className="auc-stat">
+                      <span className="auc-stat-label">Chi VND</span>
+                      <span className="auc-stat-val red-text">{fmtVND(cVND)}</span>
+                    </div>
+                    <div className="auc-stat">
+                      <span className="auc-stat-label">Chi USD</span>
+                      <span className="auc-stat-val yellow-text">{fmtUSD(cUSD)}</span>
+                    </div>
+                    <div className="auc-stat">
+                      <span className="auc-stat-label">Nhập</span>
+                      <span className="auc-stat-val green-text">{fmtVND(nVND)}</span>
+                    </div>
+                    <div className="auc-stat">
+                      <span className="auc-stat-label">Còn Lại</span>
+                      <span className={`auc-stat-val ${bal>=0?"blue-text":"red-text"}`}>{fmtVND(bal)}</span>
+                    </div>
+                  </div>
+                  <div className="auc-footer">
+                    <span>{act.length} giao dịch</span>
+                    <span className="auc-detail-hint">Xem chi tiết →</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Top games across all users */}
+      {/* Staff stats across all users */}
+      {Object.keys(staffAll).length > 0 && (
+        <div className="section">
+          <div className="section-header">
+            <span className="section-title">Nhân Viên Thu Mua · Toàn Hệ Thống</span>
+          </div>
+          <table className="data-table">
+            <thead><tr>
+              <th>Tên</th>
+              <th style={{textAlign:"right"}}>Số Acc</th>
+              <th style={{textAlign:"right"}}>Chi VND</th>
+              <th style={{textAlign:"right"}}>Chi USD</th>
+              <th style={{textAlign:"right"}}>Tổng Quy Đổi</th>
+            </tr></thead>
+            <tbody>
+              {Object.entries(staffAll).sort((a,b)=>(b[1].vnd+b[1].usd*usdRate)-(a[1].vnd+a[1].usd*usdRate)).map(([name,s]) => (
+                <tr key={name}>
+                  <td><span className="badge blue">{name}</span></td>
+                  <td className="num"><span className="badge purple">{s.count} acc</span></td>
+                  <td className="num red-text">{fmtVND(s.vnd)}</td>
+                  <td className="num yellow-text">{fmtUSD(s.usd)}</td>
+                  <td className="num red-text">{fmtVND(s.vnd+s.usd*usdRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Top games */}
       {topGames.length > 0 && (
         <div className="section">
           <div className="section-header">
             <span className="section-title">Top Game Toàn Hệ Thống</span>
-            <span style={{fontSize:11,color:"var(--text-dim)"}}>{activeFlat.length} giao dịch · {topGames.length} game</span>
+            <span style={{fontSize:11,color:"var(--text-dim)"}}>{activeFlat.length} giao dịch</span>
           </div>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={Math.max(200, topGames.length * 46 + 30)}>
-              <BarChart layout="vertical" data={topGames} margin={{left:10, right:54, top:6, bottom:6}}>
-                <XAxis type="number" tick={{fill:"#4e5880",fontSize:11,fontFamily:"IBM Plex Mono"}} axisLine={false} tickLine={false}/>
-                <YAxis type="category" dataKey="name" tick={{fill:"#8b96c0",fontSize:12,fontFamily:"Be Vietnam Pro"}} axisLine={false} tickLine={false} width={86}/>
-                <Tooltip
-                  cursor={{fill:"rgba(255,255,255,0.04)"}}
-                  contentStyle={{background:"#13162a",border:"1px solid #252d4a",borderRadius:9,fontSize:12,color:"#e8eaf6",padding:"8px 14px"}}
-                  formatter={(v) => [v + " lần", "Số lần mua"]}
-                  labelStyle={{color:"#8b96c0",marginBottom:4}}
-                />
-                <Bar dataKey="count" radius={[0,4,4,0]} maxBarSize={28}>
-                  {topGames.map((_, i) => <Cell key={i} fill={GAME_COLORS[i % GAME_COLORS.length]}/>)}
-                  <LabelList dataKey="count" position="right" style={{fill:"#8b96c0",fontSize:11,fontFamily:"IBM Plex Mono",fontWeight:600}}/>
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="game-rank-list">
+            {topGames.map((g,i) => {
+              const pct = Math.round((g.count/topGames[0].count)*100);
+              return (
+                <div key={g.name} className="game-rank-item">
+                  <span className="game-rank-pos" style={{color:GAME_COLORS[i%GAME_COLORS.length]}}>#{i+1}</span>
+                  <span className="game-rank-name">{g.name}</span>
+                  <div className="game-rank-bar-wrap">
+                    <div className="game-rank-bar" style={{width:`${pct}%`,background:GAME_COLORS[i%GAME_COLORS.length]}}/>
+                  </div>
+                  <span className="game-rank-count">{g.count} lần</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
-
     </>
   );
 }
