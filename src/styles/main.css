@@ -1813,6 +1813,17 @@ body {
   outline: none;
   width: 150px;
 }
+.admin-sort-select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+.admin-sort-select:focus { border-color: var(--blue); }
 
 /* ══════════════════════════════════════════════
    GAME RANK LIST

@@ -929,6 +929,7 @@ function AdminPage({ usdRate }) {
   const [editingUid,  setEditingUid] = useState(null);
   const [nameDraft,   setNameDraft]  = useState("");
   const [selectedUid, setSelectedUid] = useState(null);
+  const [userSort,    setUserSort]   = useState("chi_desc");
 
   useEffect(() => {
     const load = async () => {
@@ -1166,11 +1167,52 @@ function AdminPage({ usdRate }) {
       <div className="section">
         <div className="section-header">
           <span className="section-title">Tất Cả Users <span className="badge purple">{userList.length}</span></span>
-          <span style={{fontSize:11,color:"var(--text-dim)"}}>Click vào user để xem chi tiết</span>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:11,color:"var(--text-dim)"}}>Sắp xếp:</span>
+            <select
+              value={userSort}
+              onChange={e => setUserSort(e.target.value)}
+              className="admin-sort-select"
+            >
+              <option value="chi_desc">Chi nhiều nhất</option>
+              <option value="chi_asc">Chi ít nhất</option>
+              <option value="nhan_desc">Nhập nhiều nhất</option>
+              <option value="bal_desc">Còn lại nhiều nhất</option>
+              <option value="bal_asc">Còn lại ít nhất</option>
+              <option value="count_desc">Giao dịch nhiều nhất</option>
+              <option value="name_asc">Tên A → Z</option>
+            </select>
+          </div>
         </div>
         {userList.length === 0 ? <EmptyState text="Chưa có dữ liệu"/> : (
           <div className="admin-user-grid">
-            {userList.map(u => {
+            {[...userList].sort((a, b) => {
+              const stat = u => {
+                const chi  = allChi[u.uid]  || [];
+                const nhan = allNhan[u.uid] || [];
+                const act  = chi.filter(r=>!r.cancelled);
+                const cVND = act.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+                const cUSD = act.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+                const nVND = nhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+                const nUSD = nhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+                return {
+                  chi: cVND + cUSD * usdRate,
+                  nhan: nVND + nUSD * usdRate,
+                  bal: (nVND - cVND) + (nUSD - cUSD) * usdRate,
+                  count: act.length,
+                  name: (a.displayName || a.email || "").toLowerCase(),
+                };
+              };
+              const sa = stat(a), sb = stat(b);
+              if (userSort === "chi_desc")   return sb.chi   - sa.chi;
+              if (userSort === "chi_asc")    return sa.chi   - sb.chi;
+              if (userSort === "nhan_desc")  return sb.nhan  - sa.nhan;
+              if (userSort === "bal_desc")   return sb.bal   - sa.bal;
+              if (userSort === "bal_asc")    return sa.bal   - sb.bal;
+              if (userSort === "count_desc") return sb.count - sa.count;
+              if (userSort === "name_asc")   return (a.displayName||a.email||"").localeCompare(b.displayName||b.email||"");
+              return 0;
+            }).map(u => {
               const chi  = allChi[u.uid]  || [];
               const nhan = allNhan[u.uid] || [];
               const act  = chi.filter(r=>!r.cancelled);
