@@ -485,6 +485,11 @@ export default function App() {
                 <span className="nav-icon"><Icon name="grid" size={16}/></span>
                 Game
               </button>
+              <button className={`nav-btn ${tab==="admin" && adminSection==="profiles"?"active":""}`}
+                onClick={() => { setTab("admin"); setAdminSection("profiles"); setSidebarOpen(false); }}>
+                <span className="nav-icon"><Icon name="users" size={16}/></span>
+                Profile Mới Mua
+              </button>
             </>
           )}
         </nav>
@@ -1120,6 +1125,74 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
   );
 }
 
+// ── PROFILE MODAL ────────────────────────────────────────────────────────────
+function ProfileModal({ data, statusList, onClose, onSave }) {
+  const [form, setForm] = useState({
+    game:        data?.game        || "",
+    tenTrang:    data?.tenTrang    || "",
+    code:        data?.code        || "",
+    lienKet:     data?.lienKet     || "",
+    trangThai:   data?.trangThai   || "active",
+    contactKhac: data?.contactKhac || "",
+    soGiaoDich:  data?.soGiaoDich  || "",
+    payment:     data?.payment     || "",
+    ghiChu:      data?.ghiChu      || "",
+  });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">{data?.id?"Chỉnh Sửa":"Thêm Mới"} — Profile Mới Mua</div>
+            <div className="modal-title-sub">Quản lý profile thu mua</div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><Icon name="close" size={15}/></button>
+        </div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <Field label="Game">
+              <input placeholder="VD: ROK, WOS..." value={form.game} onChange={e=>set("game",e.target.value)}/>
+            </Field>
+            <Field label="Trạng Thái">
+              <select value={form.trangThai} onChange={e=>set("trangThai",e.target.value)}>
+                {statusList.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Tên Trang / Cá Nhân">
+              <input placeholder="Tên fanpage hoặc cá nhân" value={form.tenTrang} onChange={e=>set("tenTrang",e.target.value)}/>
+            </Field>
+            <Field label="Code">
+              <input placeholder="Mã định danh" value={form.code} onChange={e=>set("code",e.target.value)}/>
+            </Field>
+            <Field label="Số Giao Dịch">
+              <input type="number" min="0" placeholder="0" value={form.soGiaoDich} onChange={e=>set("soGiaoDich",e.target.value)}/>
+            </Field>
+            <Field label="Payment">
+              <input placeholder="Thông tin thanh toán" value={form.payment} onChange={e=>set("payment",e.target.value)}/>
+            </Field>
+          </div>
+          <Field label="Liên Kết Profile (URL)">
+            <input placeholder="https://..." value={form.lienKet} onChange={e=>set("lienKet",e.target.value)}/>
+          </Field>
+          <Field label="Contact Khác">
+            <input placeholder="Zalo, Telegram, SĐT..." value={form.contactKhac} onChange={e=>set("contactKhac",e.target.value)}/>
+          </Field>
+          <Field label="Ghi Chú">
+            <textarea rows={2} placeholder="Ghi chú thêm..." value={form.ghiChu} onChange={e=>set("ghiChu",e.target.value)}/>
+          </Field>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>Hủy</button>
+          <button className="btn-save" onClick={()=>onSave({...form,soGiaoDich:Number(form.soGiaoDich)||0},data?.id)}>
+            <Icon name="check" size={13}/>{data?.id?"Lưu Thay Đổi":"Thêm Profile"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── GAME MODAL ────────────────────────────────────────────────────────────────
 function GameModal({ data, onClose, onSave }) {
   const [form, setForm] = useState({
@@ -1300,7 +1373,11 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
   // ── Tasks state ──
   const [tasks,        setTasks]       = useState([]);
   const [taskFilter,   setTaskFilter]  = useState("all");
-  const [taskModal,    setTaskModal]   = useState(null); // null | {data} | {}
+  const [taskModal,    setTaskModal]   = useState(null);
+  // ── Profiles state ──
+  const [profiles,     setProfiles]    = useState([]);
+  const [profileModal, setProfileModal]= useState(null);
+  const [profileGame,  setProfileGame] = useState("all");
   const adminUid = auth.currentUser?.uid;
 
   useEffect(() => {
@@ -1368,6 +1445,27 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
     await deleteDoc(doc(db, `users/${adminUid}/tasks`, id));
   };
 
+  // Real-time profiles subscription
+  useEffect(() => {
+    if (!adminUid) return;
+    const q = query(collection(db, `users/${adminUid}/profiles`), orderBy("createdAt","desc"));
+    const unsub = onSnapshot(q, s => setProfiles(s.docs.map(d=>({id:d.id,...d.data()}))), ()=>{});
+    return unsub;
+  }, [adminUid]);
+
+  const saveProfile = async (data, id) => {
+    if (!adminUid) return;
+    const path = `users/${adminUid}/profiles`;
+    if (id) await updateDoc(doc(db, path, id), { ...data, updatedAt: serverTimestamp() });
+    else    await addDoc(collection(db, path), { ...data, createdAt: serverTimestamp() });
+    setProfileModal(null);
+  };
+
+  const deleteProfile = async (id) => {
+    if (!adminUid) return;
+    await deleteDoc(doc(db, `users/${adminUid}/profiles`, id));
+  };
+
   const allChiFlat  = useMemo(() => Object.values(allChi).flat(),  [allChi]);
   const allNhanFlat = useMemo(() => Object.values(allNhan).flat(), [allNhan]);
   const activeFlat  = useMemo(() => allChiFlat.filter(r => !r.cancelled), [allChiFlat]);
@@ -1397,6 +1495,93 @@ function AdminPage({ usdRate, adminSection, setAdminSection }) {
       <div style={{padding:"20px 24px"}}><div className="login-error">{adminError}</div></div>
     </div>
   );
+
+  // ── Profiles section ──
+  if (adminSection === "profiles") {
+    const PROFILE_STATUS = [
+      { key:"active",   label:"Active",   color:"var(--green)"  },
+      { key:"pending",  label:"Pending",  color:"var(--yellow)" },
+      { key:"closed",   label:"Closed",   color:"#9ca3af"       },
+    ];
+    const smP = k => PROFILE_STATUS.find(s=>s.key===k) || PROFILE_STATUS[0];
+    const games = ["all", ...Array.from(new Set(profiles.map(p=>p.game).filter(Boolean)))];
+    const displayed = profileGame==="all" ? profiles : profiles.filter(p=>p.game===profileGame);
+
+    return (
+      <>
+        <div className="admin-section-bar">
+          <span className="asb-title">Profile Mới Mua</span>
+          <button className="btn-add" style={{marginLeft:"auto"}} onClick={()=>setProfileModal({})}>
+            <Icon name="plus" size={13}/> Thêm Mới
+          </button>
+        </div>
+
+        {/* Game filter */}
+        <div className="game-team-bar">
+          {games.map(g=>(
+            <button key={g} className={`game-team-btn${profileGame===g?" active":""}`} onClick={()=>setProfileGame(g)}>
+              {g==="all"?"Tất Cả":g}
+            </button>
+          ))}
+        </div>
+
+        {/* Table */}
+        <div className="section" style={{borderTop:"none"}}>
+          {displayed.length===0 ? <EmptyState text="Chưa có profile nào"/> : (
+            <div style={{overflowX:"auto"}}>
+              <table className="data-table profile-table">
+                <thead><tr>
+                  <th style={{width:100}}>Game</th>
+                  <th>Tên Trang / Cá Nhân</th>
+                  <th style={{width:110}}>Code</th>
+                  <th style={{width:80}}>Profile</th>
+                  <th style={{width:120}}>Trạng Thái</th>
+                  <th>Contact Khác</th>
+                  <th style={{width:80,textAlign:"center"}}>Giao Dịch</th>
+                  <th style={{width:110}}>Payment</th>
+                  <th style={{width:60}}></th>
+                </tr></thead>
+                <tbody>
+                  {displayed.map(p => {
+                    const sm = smP(p.trangThai);
+                    return (
+                      <tr key={p.id}>
+                        <td><span className="game-team-badge">{p.game||"—"}</span></td>
+                        <td className="profile-name-cell">{p.tenTrang||"—"}</td>
+                        <td style={{fontFamily:"var(--mono)",fontSize:12}}>{p.code||"—"}</td>
+                        <td style={{textAlign:"center"}}>
+                          {p.lienKet
+                            ? <a href={p.lienKet} target="_blank" rel="noopener noreferrer" className="note-link-badge">Link ↗</a>
+                            : <span style={{color:"var(--text-dim)"}}>—</span>}
+                        </td>
+                        <td>
+                          <span className="task-status-badge" style={{color:sm.color,borderColor:sm.color+"44",background:sm.color+"18"}}>
+                            {sm.label}
+                          </span>
+                        </td>
+                        <td className="profile-contact-cell">{p.contactKhac||"—"}</td>
+                        <td style={{textAlign:"center",fontFamily:"var(--mono)",fontWeight:700}}>{p.soGiaoDich||0}</td>
+                        <td style={{fontSize:12,color:"var(--text-mid)"}}>{p.payment||"—"}</td>
+                        <td className="actions">
+                          <button className="icon-btn" onClick={()=>setProfileModal(p)}><Icon name="edit" size={13}/></button>
+                          <button className="icon-btn danger" onClick={()=>deleteProfile(p.id)}><Icon name="trash" size={13}/></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {profileModal !== null && (
+          <ProfileModal data={profileModal.id?profileModal:null} statusList={PROFILE_STATUS}
+            onClose={()=>setProfileModal(null)} onSave={saveProfile}/>
+        )}
+      </>
+    );
+  }
 
   // ── Tasks section ──
   if (adminSection === "tasks") {
