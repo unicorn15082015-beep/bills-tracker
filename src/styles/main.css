@@ -448,6 +448,20 @@ body {
   font-family: var(--mono);
   color: var(--text-dim);
 }
+.sum-carry {
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 5px;
+}
+.sum-carry .pos { color: var(--green); }
+.sum-carry .neg { color: var(--red); }
 
 .sum-sub.pos { color: var(--green); }
 .sum-sub.neg { color: var(--red); }

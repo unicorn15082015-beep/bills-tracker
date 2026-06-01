@@ -311,8 +311,28 @@ export default function App() {
   const totalChiUSD  = useMemo(() => activeChi.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [activeChi]);
   const totalNhanVND = useMemo(() => filteredNhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0), [filteredNhan]);
   const totalNhanUSD = useMemo(() => filteredNhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0), [filteredNhan]);
-  const conVND = totalNhanVND - totalChiVND;
-  const conUSD = totalNhanUSD - totalChiUSD;
+
+  // Carryover: cumulative balance from all months BEFORE the selected month
+  const carryVND = useMemo(() => {
+    if (!filterMonth) return 0;
+    const beforeChi  = chiRows.filter(r => !r.cancelled && (()=>{const d=getRowDate(r); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}` < filterMonth;})());
+    const beforeNhan = nhanRows.filter(r => (()=>{const d=getRowDate(r); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}` < filterMonth;})());
+    const prevNhan = beforeNhan.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+    const prevChi  = beforeChi.filter(r=>r.currency==="VND").reduce((s,r)=>s+(r.soTien||0),0);
+    return prevNhan - prevChi;
+  }, [chiRows, nhanRows, filterMonth]);
+
+  const carryUSD = useMemo(() => {
+    if (!filterMonth) return 0;
+    const beforeChi  = chiRows.filter(r => !r.cancelled && (()=>{const d=getRowDate(r); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}` < filterMonth;})());
+    const beforeNhan = nhanRows.filter(r => (()=>{const d=getRowDate(r); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}` < filterMonth;})());
+    const prevNhan = beforeNhan.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+    const prevChi  = beforeChi.filter(r=>r.currency==="USD").reduce((s,r)=>s+(r.soTien||0),0);
+    return prevNhan - prevChi;
+  }, [chiRows, nhanRows, filterMonth]);
+
+  const conVND = totalNhanVND - totalChiVND + carryVND;
+  const conUSD = totalNhanUSD - totalChiUSD + carryUSD;
 
   // staffStats: count VND and USD accounts separately then sum
   const staffStats = useMemo(() => {
@@ -617,6 +637,13 @@ export default function App() {
                 </div>
                 <div className="sum-value">{fmtVND(conVND)}</div>
                 <div className={`sum-sub ${conUSD>=0?"pos":"neg"}`}>USD: {fmtUSD(conUSD)}</div>
+                {(carryVND !== 0 || carryUSD !== 0) && (
+                  <div className="sum-carry">
+                    <span>Kỳ trước: </span>
+                    {carryVND !== 0 && <span className={carryVND>=0?"pos":"neg"}>{fmtVND(carryVND)}</span>}
+                    {carryUSD !== 0 && <span className={carryUSD>=0?"pos":"neg"}> {fmtUSD(carryUSD)}</span>}
+                  </div>
+                )}
               </div>
             </div>
           )}
